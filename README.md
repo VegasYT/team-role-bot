@@ -21,7 +21,7 @@ python --version
 ### Шаг 2: Клонирование репозитория
 Склонируйте этот репозиторий:
 ```bash
-git clone https://github.com/VegasYT/Tg_bot_tags.git
+git clone https://github.com/VegasYT/team-role-bot.git
 ```
 
 ### Шаг 3: Установка виртуального окружения и зависимостей
