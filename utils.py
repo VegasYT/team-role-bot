@@ -1,4 +1,5 @@
 # Стандартные библиотеки
+import re
 
 # Библиотеки сторонних разработчиков
 from aiogram.types import Message
@@ -190,3 +191,21 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
         return False
 
     return True
+
+
+def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, str]:
+    """
+    Ищет в command_text шаблон:
+      ^/команда "что-то в кавычках" (опционально) остаток
+    Возвращает (строка_в_кавычках, остаток).
+    Если нет совпадения, возвращает (None, None).
+    """
+    # Экранируем команду (вдруг есть спецсимволы)
+    pattern = rf'^{re.escape(command_name)}\s+"([^"]+)"\s*(.*)$'
+    match = re.match(pattern, command_text)
+    if not match:
+        return None, None  # Ничего не найдено
+
+    name_in_quotes = match.group(1)   # что внутри кавычек
+    remainder = match.group(2).strip()  # остаток строки (может быть пустым)
+    return name_in_quotes, remainder

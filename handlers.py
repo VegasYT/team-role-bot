@@ -14,7 +14,7 @@ from aiogram.exceptions import TelegramBadRequest
 from database import get_team_members, SessionLocal
 from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands
 from config import BOT_TOKEN, EMOJI_IDS
-from utils import check_user_and_permissions
+from utils import check_user_and_permissions, parse_quoted_argument
 
 
 bot = Bot(token=BOT_TOKEN)
@@ -35,17 +35,11 @@ async def add_team_command(message: Message):
         db.close()
         return
     
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("Использование: /add_team <название команды>")
-        db.close()
-        return
+    team_name, remainder = parse_quoted_argument(message.text, '/add_team')
 
-    team_name = args[1]
-
-    # Валидация: название команды должно состоять из одного слова
-    if ' ' in team_name:
-        await message.reply("Ошибка: название команды должно состоять из одного слова.")
+    # Валидация
+    if not team_name:
+        await message.reply('Использование: /add_team "Название команды"')
         db.close()
         return
 
@@ -81,15 +75,22 @@ async def add_member_command(message: Message):
     if not await check_user_and_permissions(db, message, '/add_member'):
         db.close()
         return
-    
-    args = message.text.split(maxsplit=2)
-    if len(args) < 3:
-        await message.reply("Использование: /add_member <название команды> <имя пользователя1> <имя пользователя2> ...")
+
+    team_name, remainder = parse_quoted_argument(message.text, '/add_member')
+
+    if not team_name:
+        await message.reply('Использование: /add_member "Название команды" user1 user2 ...')
         db.close()
         return
-
-    team_name = args[1]
-    usernames = args[2].split()  # Разбиваем имена пользователей на список
+    
+    # remainder может содержать что угодно после кавычек: "user1 user2 user3"
+    if not remainder:
+        await message.reply('Укажите хотя бы одного пользователя: /add_member "Название команды" user1 user2 ...')
+        db.close()
+        return
+    
+    # Разбиваем оставшийся текст по пробелам — это список пользователей
+    usernames = remainder.split()
 
     team = db.query(Team).filter(Team.team_name == team_name).first()
 
@@ -178,12 +179,13 @@ async def remove_team_command(message: Message):
         db.close()
         return
     
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("Использование: /remove_team <название команды>")
+    team_name, remainder = parse_quoted_argument(message.text, '/remove_team')
+    
+    if not team_name:
+        await message.reply('Использование: /remove_team "Название команды"')
+        db.close()
         return
 
-    team_name = args[1]
     team = db.query(Team).filter(Team.team_name == team_name).first()
 
     if team:
@@ -212,13 +214,15 @@ async def remove_member_command(message: Message):
         db.close()
         return
     
-    args = message.text.split(maxsplit=2)
-    if len(args) < 3:
-        await message.reply("Использование: /remove_member <название команды> <имя пользователя1> <имя пользователя2> ...")
-        return
 
-    team_name = args[1]
-    usernames = args[2].split()  # Разбиваем имена пользователей на список
+    team_name, remainder = parse_quoted_argument(message.text, '/remove_member')
+
+    if not team_name:
+        await message.reply('Использование: /remove_member "Название команды" user1 user2 ...')
+        db.close()
+        return
+    
+    usernames = remainder.split()
 
     team = db.query(Team).filter(Team.team_name == team_name).first()
 
@@ -272,86 +276,88 @@ async def tag_command(message: Message):
     
     db = SessionLocal()
 
-    # Проверяем пользователя, чат и разрешение команды
+    # Проверяем пользователя, чат и разрешение
     if not await check_user_and_permissions(db, message, '/tag'):
         db.close()
         return
-    
-    team_name = None  # Инициализируем переменную team_name заранее
-    custom_message = ""  # Инициализация переменной custom_message
-    mention_sender = True  # По умолчанию — упоминаем отправителя
 
-    # Проверяем, что текст существует
+    team_name = None
+    custom_message = ""
+    mention_sender = True
+
+    # 1) Сохраняем формат для text через message.html_text
+    #    Для caption (фото/документ) в старых версиях aiogram нет caption_html, поэтому fallback в обычный caption.
+    full_text = ""
     if message.text:
-        # Разделяем команду и текст
-        args = message.text.split(maxsplit=3)  # Разделяем на 4 части: команда, аргумент, текст
-        if len(args) < 3:
-            await message.reply("Использование: /tag <команда> [-no-author] <текст сообщения>")
-            return
+        full_text = message.html_text  # сохраняем HTML-разметку
+    elif message.caption:
+        full_text = message.caption  # без сохранения "сложной" разметки
 
-        team_name = args[1]
-        custom_message = message.html_text.partition(team_name)[2].strip()
-
-        # Проверка на аргумент --no-author
-        if len(args) > 3 and args[2] == "-no-author":
-            mention_sender = False
-            custom_message = custom_message.replace("-no-author", "").strip()
-
-    elif message.caption:  # Если текст не найден, проверяем описание медиафайла
-        args = message.caption.split(maxsplit=3)
-        if len(args) < 3:
-            await message.reply("Использование: /tag <команда> [-no-author] <текст сообщения>")
-            return
-
-        team_name = args[1]
-        custom_message = message.caption.partition(team_name)[2].strip()
-
-        # Проверка на аргумент --no-author
-        if len(args) > 3 and args[2] == "-no-author":
-            mention_sender = False
-            custom_message = custom_message.replace("-no-author", "").strip()
-
-    # Если команда не указана, возвращаем ошибку
-    if not team_name:
-        await message.reply("Не указана команда для тега!")
+    if not full_text:
+        await message.reply('Использование: /tag "Название команды" [-no-author] <текст>')
+        db.close()
         return
 
-    # Получаем участников команды из базы данных с помощью SQLAlchemy
-    members = get_team_members(db, team_name)
+    # 2) С помощью RegEx ищем "Название команды" в кавычках и остальное
+    import re
+    pattern = r'^/tag\s+"([^"]+)"\s*(.*)$'
+    match = re.match(pattern, full_text, flags=re.DOTALL)
+    if not match:
+        await message.reply('Использование: /tag "Название команды" [-no-author] <текст>')
+        db.close()
+        return
 
+    team_name = match.group(1)         # то, что внутри кавычек
+    remainder = match.group(2).strip() # всё, что идёт после
+
+    # 3) Проверяем флаг -no-author (если он в начале остатка)
+    if remainder.startswith('-no-author'):
+        mention_sender = False
+        remainder = remainder[len('-no-author'):].strip()
+
+    # Остаток считаем пользовательским сообщением (HTML/текст)
+    custom_message = remainder
+
+    # --- Далее ваша логика, без изменений: 
+    members = get_team_members(db, team_name)
     if not members:
         await message.reply(f"Команда '{team_name}' не найдена или не имеет участников.")
+        db.close()
         return
 
     mentions = " ".join([f"@{member.username}" for member in members])
-    sender = f"Команду вызвал(а): @{message.from_user.username}" if message.from_user.username else "Команду вызвал(а): пользователь без username"
+    sender = (
+        f"Команду вызвал(а): @{message.from_user.username}"
+        if message.from_user.username
+        else "Команду вызвал(а): пользователь без username"
+    )
 
-    # Если не нужно упоминать отправителя, убираем его из финального сообщения
     if not mention_sender:
         sender = ""
 
-    # Экранируем текст для безопасного использования в HTML
-    team_name = escape(team_name)
-    mentions = escape(mentions)
-    sender = escape(sender)
+    # ВАЖНО: если вы хотите сохранить сложную HTML-разметку из custom_message – не экранируем его.
+    # Но team_name, mentions и sender лучше экранировать
+    from html import escape
+    team_name_escaped = escape(team_name)
+    mentions_escaped = escape(mentions)
+    sender_escaped = escape(sender)
 
-    # Форматируем сообщение
     formatted_message = (
-        f"<blockquote>Для команды #{team_name}</blockquote>\n\n"
+        f"<blockquote>Для команды #{team_name_escaped}</blockquote>\n\n"
         f"{custom_message}\n\n"
-        f"<i>{mentions}</i>\n"
-        f"<i>{sender}</i>"
+        f"<i>{mentions_escaped}</i>\n"
+        f"<i>{sender_escaped}</i>"
     )
 
-    # Отправка сообщений в зависимости от типа медиа (фото, документ, аудио)
+    # Удаляем исходное сообщение (как и прежде)
+    try:
+        await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    except TelegramBadRequest as e:
+        print(f"Ошибка удаления сообщения: {e}")
+
+    # Далее – отправка фото/документа/аудио/текста (как у вас в коде)
     if message.photo:
-        media = message.photo[-1].file_id  # Берем самое лучшее качество фото
-
-        try:
-            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-        except TelegramBadRequest as e:
-            print(f"Ошибка удаления сообщения: {e}")
-
+        media = message.photo[-1].file_id
         await bot.send_photo(
             chat_id=message.chat.id,
             photo=media,
@@ -360,15 +366,8 @@ async def tag_command(message: Message):
             caption_entities=message.caption_entities,
             message_thread_id=message.message_thread_id
         )
-
     elif message.document:
         media = message.document.file_id
-
-        try:
-            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-        except TelegramBadRequest as e:
-            print(f"Ошибка удаления сообщения: {e}")
-
         await bot.send_document(
             chat_id=message.chat.id,
             document=media,
@@ -376,16 +375,10 @@ async def tag_command(message: Message):
             parse_mode="HTML",
             message_thread_id=message.message_thread_id
         )
-
     elif message.audio:
         mime_type = message.audio.mime_type
         if mime_type in ['audio/mpeg', 'audio/ogg']:
             media = message.audio.file_id
-            try:
-                await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-            except TelegramBadRequest as e:
-                print(f"Ошибка удаления сообщения: {e}")
-
             await bot.send_audio(
                 chat_id=message.chat.id,
                 audio=media,
@@ -395,11 +388,6 @@ async def tag_command(message: Message):
             )
         else:
             media = message.audio.file_id
-            try:
-                await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-            except TelegramBadRequest as e:
-                print(f"Ошибка удаления сообщения: {e}")
-
             await bot.send_document(
                 chat_id=message.chat.id,
                 document=media,
@@ -407,13 +395,7 @@ async def tag_command(message: Message):
                 parse_mode="HTML",
                 message_thread_id=message.message_thread_id
             )
-
     else:
-        try:
-            await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-        except TelegramBadRequest as e:
-            print(f"Ошибка удаления сообщения: {e}")
-
         await bot.send_message(
             chat_id=message.chat.id,
             text=formatted_message,
@@ -435,7 +417,7 @@ async def ban_member_command(message: Message):
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
-    if not await check_user_and_permissions(db, message, '/ban'):
+    if not await check_user_and_permissions(db, message, '/ban_member'):
         db.close()
         return
 
@@ -849,7 +831,7 @@ async def role_manage_command(message: Message):
     args = message.text.split(maxsplit=4)
     
     if len(args) < 3:
-        await message.reply("Использование: /role_manage <create|edit|delete|edit_level> <role_name> [<new_value>]")
+        await message.reply("Использование: /role_manage <create|edit|delete|edit_level> <role_name> <new_value>")
         db.close()
         return
     
@@ -1147,23 +1129,30 @@ async def topics_manage_command(message: Message):
         db.close()
         return
 
-    args = message.text.split(maxsplit=3)
-
-    if len(args) < 3:
-        await message.reply("Использование: /topics_manage <add|edit|delete> <topic_name> [<description>]")
+    import re
+    # Шаблон:
+    #   /topics_manage\s+(\S+)\s+"([^"]+)"\s*(.*)
+    #   1) operation (add|edit|delete)
+    #   2) topic_name (в кавычках)
+    #   3) remainder (описание, может быть пустым)
+    pattern = r'^/topics_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
+    match = re.match(pattern, message.text, flags=re.DOTALL)
+    if not match:
+        await message.reply('Использование: /topics_manage <add|edit|delete> "topic_name" [описание]')
         db.close()
         return
 
-    operation = args[1].lower()
-    topic_name = args[2]
+    operation = match.group(1).lower()  # add|edit|delete
+    topic_name = match.group(2)         # внутри кавычек
+    remainder = match.group(3).strip()  # описание или пусто
 
     if operation == "add":
-        if len(args) < 4:
-            await message.reply("Для добавления топика укажите описание топика (например, 'add <topic_name> <description>').")
+        if not remainder:
+            await message.reply("Для добавления топика укажите описание (пример: /topics_manage add \"Топик\" Описание).")
             db.close()
             return
 
-        description = args[3]
+        description = remainder
 
         # Проверяем, существует ли уже такой топик
         existing_topic = db.query(Topic).filter(Topic.topic_name == topic_name).first()
@@ -1172,7 +1161,6 @@ async def topics_manage_command(message: Message):
             db.close()
             return
 
-        # Создаем новый топик
         new_topic = Topic(topic_name=topic_name, description=description)
         db.add(new_topic)
         db.commit()
@@ -1181,21 +1169,19 @@ async def topics_manage_command(message: Message):
         await message.reply(f"Топик '{topic_name}' успешно добавлен с описанием: {description}.")
 
     elif operation == "edit":
-        if len(args) < 4:
-            await message.reply("Для редактирования топика укажите новое описание (например, 'edit <topic_name> <new_description>').")
+        if not remainder:
+            await message.reply("Для редактирования топика укажите новое описание (пример: /topics_manage edit \"Топик\" НовоеОписание).")
             db.close()
             return
 
-        new_description = args[3]
+        new_description = remainder
 
-        # Ищем топик по имени
         topic = db.query(Topic).filter(Topic.topic_name == topic_name).first()
         if not topic:
             await message.reply(f"Топик '{topic_name}' не найден.")
             db.close()
             return
 
-        # Обновляем описание топика
         topic.description = new_description
         db.commit()
         db.close()
@@ -1210,7 +1196,6 @@ async def topics_manage_command(message: Message):
             db.close()
             return
 
-        # Удаляем топик
         db.delete(topic)
         db.commit()
         db.close()
@@ -1220,7 +1205,6 @@ async def topics_manage_command(message: Message):
     else:
         await message.reply("Недопустимая операция. Доступные операции: add, edit, delete.")
         db.close()
-        return
 
 
 async def topics_commands_manage_command(message: Message):
@@ -1233,23 +1217,35 @@ async def topics_commands_manage_command(message: Message):
     
     db = SessionLocal()
 
-    # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/topics_commands_manage'):
         db.close()
         return
 
-    args = message.text.split()
-
-    if len(args) < 3 or args[1].lower() not in ['add', 'remove']:
-        await message.reply("Использование: /topics_commands_manage <add|delete> <topic_name> <command_1> <command_2> ...")
+    import re
+    # Шаблон:
+    #   /topics_commands_manage\s+(\S+)\s+"([^"]+)"\s*(.*)
+    #   1) operation (add|remove)
+    #   2) topic_name (в кавычках)
+    #   3) remainder (список команд)
+    pattern = r'^/topics_commands_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
+    match = re.match(pattern, message.text, flags=re.DOTALL)
+    if not match:
+        await message.reply('Использование: /topics_commands_manage <add|remove> "topic_name" <command1> <command2> ...')
         db.close()
         return
 
-    operation = args[1].lower()
-    topic_name = args[2]
-    commands_to_manage = args[3:]
+    operation = match.group(1).lower()   # add|remove
+    topic_name = match.group(2)         # внутри кавычек
+    remainder = match.group(3).strip()  # всё, что после
 
-    # Ищем топик по имени
+    if not remainder:
+        await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "topic_name" command1 command2 ...')
+        db.close()
+        return
+
+    # Список команд
+    commands_to_manage = remainder.split()
+
     topic = db.query(Topic).filter(Topic.topic_name == topic_name).first()
     if not topic:
         await message.reply(f"Топик '{topic_name}' не найден.")
@@ -1259,45 +1255,45 @@ async def topics_commands_manage_command(message: Message):
     result_message = f"Результат выполнения операции '{operation}' для топика '{topic_name}':\n\n"
 
     if operation == 'add':
-        # Для каждой команды из списка
         for command_name in commands_to_manage:
             command = db.query(Command).filter(Command.command_name == command_name).first()
             if not command:
                 result_message += f"❌ Команда '{command_name}' не найдена.\n"
-                continue  # Пропускаем добавление этой команды, если она не существует
+                continue
 
-            # Проверяем, есть ли эта команда уже в топике
-            existing_topic_command = db.query(TopicCommands).filter(TopicCommands.topic_id == topic.id, TopicCommands.command_id == command.id).first()
+            existing_topic_command = db.query(TopicCommands).filter(
+                TopicCommands.topic_id == topic.id,
+                TopicCommands.command_id == command.id
+            ).first()
             if existing_topic_command:
                 result_message += f"🔹 Команда '{command_name}' уже добавлена в топик '{topic_name}'.\n"
             else:
-                # Добавляем команду в топик
                 topic_command = TopicCommands(topic_id=topic.id, command_id=command.id)
                 db.add(topic_command)
                 db.commit()
                 result_message += f"✅ Команда '{command_name}' успешно добавлена в топик '{topic_name}'.\n"
 
     elif operation == 'remove':
-        # Для каждой команды из списка
         for command_name in commands_to_manage:
             command = db.query(Command).filter(Command.command_name == command_name).first()
             if not command:
                 result_message += f"❌ Команда '{command_name}' не найдена.\n"
-                continue  # Пропускаем удаление этой команды, если она не существует
+                continue
 
-            # Проверяем, есть ли эта команда в топике
-            topic_command = db.query(TopicCommands).filter(TopicCommands.topic_id == topic.id, TopicCommands.command_id == command.id).first()
+            topic_command = db.query(TopicCommands).filter(
+                TopicCommands.topic_id == topic.id,
+                TopicCommands.command_id == command.id
+            ).first()
             if topic_command:
-                # Удаляем команду из топика
                 db.delete(topic_command)
                 db.commit()
                 result_message += f"✅ Команда '{command_name}' успешно удалена из топика '{topic_name}'.\n"
             else:
                 result_message += f"🔹 Команда '{command_name}' не найдена в топике '{topic_name}'.\n"
+    else:
+        result_message = "Недопустимая операция. Доступные операции: add, remove."
 
     db.close()
-
-    # Отправляем итоговое сообщение
     await message.reply(result_message)
 
 
