@@ -166,7 +166,14 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
     member = db.query(Member).filter(Member.username == message.from_user.username).first()
 
     # Получаем название топика, в котором была вызвана команда
-    topic_name = message.reply_to_message.forum_topic_created.name if message.reply_to_message else None
+    if (
+        message.reply_to_message 
+        and hasattr(message.reply_to_message, "forum_topic_created") 
+        and message.reply_to_message.forum_topic_created
+    ):
+        topic_name = message.reply_to_message.forum_topic_created.name
+    else:
+        topic_name = None
 
     # Проверка на разрешение команды для данного топика
     if topic_name:
