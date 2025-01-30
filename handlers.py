@@ -63,10 +63,7 @@ async def add_team_command(message: Message):
 
 async def add_member_command(message: Message):
     """
-    Обрабатывает команду для добавления или перемещения пользователей в команду (/add_member). Проверяет существование команды и пользователей, добавляет их в команду или перемещает, если они уже состоят в другой.
-
-    :param message: Сообщение от пользователя, содержащее команду, название команды и список пользователей.
-    :return: Ответ в чат с результатами добавления/перемещения пользователей.
+    Обрабатывает команду для добавления пользователей в команду (/add_member). Пользователи могут состоять сразу в нескольких командах.
     """
     
     db = SessionLocal()
@@ -83,15 +80,12 @@ async def add_member_command(message: Message):
         db.close()
         return
     
-    # remainder может содержать что угодно после кавычек: "user1 user2 user3"
     if not remainder:
         await message.reply('Укажите хотя бы одного пользователя: /add_member "Название команды" user1 user2 ...')
         db.close()
         return
     
-    # Разбиваем оставшийся текст по пробелам — это список пользователей
     usernames = remainder.split()
-
     team = db.query(Team).filter(Team.team_name == team_name).first()
 
     if not team:
@@ -99,64 +93,52 @@ async def add_member_command(message: Message):
         db.close()
         return
 
-    # Списки для разных типов пользователей
     added_users = []
-    already_existing_users = []
-    moved_users = []
+    already_in_team_users = []
 
     for username in usernames:
-        # Убираем символ @, если он есть
         username_without_at = username.lstrip('@')
-
-        # Проверяем, существует ли пользователь в базе данных
         existing_user = db.query(Member).filter(Member.username == username_without_at).first()
 
         if existing_user:
-            # Проверяем, состоит ли пользователь в указанной команде
-            if existing_user.team_id is None:
-                # Если у пользователя нет команды, добавляем его в команду
-                existing_user.team_id = team.id
-                added_users.append(f"@{username_without_at}")  # Приписываем @
-            elif existing_user.team_id != team.id:
-                # Если у пользователя есть другая команда, перемещаем его в новую команду
-                old_team_name = db.query(Team).filter(Team.id == existing_user.team_id).first()
-                if old_team_name:  # Проверяем, что команда с таким ID существует
-                    moved_users.append(f"@{username_without_at} перемещены из команды '{old_team_name.team_name}' в команду '{team_name}'")
-                existing_user.team_id = team.id  # Перемещаем пользователя в новую команду
+            # Проверяем, состоит ли пользователь в команде
+            if team not in existing_user.teams:
+                # Если пользователь еще не в этой команде, добавляем
+                existing_user.teams.append(team)
+                added_users.append(f"@{username_without_at}")
             else:
-                already_existing_users.append(f"@{username_without_at}")  # Приписываем @, если он уже в команде
+                already_in_team_users.append(f"@{username_without_at}")
         else:
-            # Пользователь не найден, создаем его
-            new_user = Member(username=username_without_at, team_id=team.id)
+            # Создаем нового пользователя
+            new_user = Member(username=username_without_at)
             
             # Назначаем роль по умолчанию
             default_role = db.query(Role).filter(Role.role_name == 'default_user').first()
             if not default_role:
-                # Если роль по умолчанию не найдена, создаем ее
                 default_role = Role(role_name='default_user')
                 db.add(default_role)
                 db.commit()
 
-            new_user.role_id = default_role.id  # Назначаем роль по умолчанию
-
+            new_user.role_id = default_role.id
             db.add(new_user)
-            added_users.append(f"@{username_without_at}")  # Приписываем @
+            db.commit()
+
+            # Добавляем пользователя в команду
+            new_user.teams.append(team)
+            added_users.append(f"@{username_without_at}")
 
     db.commit()
 
-    # Формируем ответ в соответствии с добавленными и перемещенными пользователями
+    # Формируем ответ
     response_message = ""
 
     if added_users:
         response_message += f"✅ Пользователи {', '.join(added_users)} добавлены в команду '{team_name}'.\n\n"
 
-    if moved_users:
-        response_message += f"🔁 Пользователи {', '.join(moved_users)}.\n\n"
+    if already_in_team_users:
+        response_message += f"⚠️ Пользователи {', '.join(already_in_team_users)} уже в команде '{team_name}'."
 
-    if already_existing_users:
-        response_message += f"⚠️ Пользователи {', '.join(already_existing_users)} уже в команде '{team_name}'."
-
-    if not added_users and not already_existing_users and not moved_users:
+    if not added_users and not already_in_team_users:
         response_message = f"❌ Не удалось добавить пользователей в команду '{team_name}'."
 
     db.close()
@@ -238,7 +220,8 @@ async def remove_member_command(message: Message):
         username_without_at = username.lstrip('@')
 
         # Проверяем, есть ли пользователь в команде
-        user_in_team = db.query(Member).filter(Member.team_id == team.id, Member.username == username_without_at).first()
+        # user_in_team = db.query(Member).filter(Member.team_id == team.id, Member.username == username_without_at).first()
+        user_in_team = (db.query(Member).join(Member.teams).filter(Team.id == team.id,Member.username == username_without_at).first())
 
         if user_in_team:
             # Устанавливаем NULL в поле team_id, удаляя пользователя из команды
@@ -734,7 +717,8 @@ async def teams_command(message: Message):
     teams_list = ""
     for team in teams:
         # Получаем участников команды
-        members = db.query(Member).filter(Member.team_id == team.id).all()
+        # members = db.query(Member).filter(Member.team_id == team.id).all()
+        members = db.query(Member).join(Member.teams).filter(Team.id == team.id).all()
         member_names = [member.username for member in members]
 
         # Формируем строку с участниками команды

@@ -1,7 +1,7 @@
 # Стандартные библиотеки
 
 # Библиотеки сторонних разработчиков
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -12,26 +12,35 @@ from sqlalchemy.sql import func
 Base = declarative_base()
 
 
+# Таблица-связка many-to-many
+member_team_table = Table(
+    "member_teams", Base.metadata,
+    Column("member_id", Integer, ForeignKey("members.id", ondelete="CASCADE"), primary_key=True),
+    Column("team_id", Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
+)
+
 class Team(Base):
-    __tablename__ = 'teams'
+    __tablename__ = "teams"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)  # Уникальный идентификатор команды
-    team_name = Column(String, unique=True, nullable=False)  # Название команды, должно быть уникальным
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    team_name = Column(String, unique=True, nullable=False)
 
-    members = relationship("Member", back_populates="team")  # Связь с участниками команды
+    # Определяем связь many-to-many
+    members = relationship("Member", secondary=member_team_table, back_populates="teams")
 
 
 class Member(Base):
-    __tablename__ = 'members'
+    __tablename__ = "members"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)  # Уникальный идентификатор участника
-    username = Column(String, nullable=False)  # Имя пользователя (логин или никнейм)
-    telegram_id = Column(Integer, nullable=True)  # ID пользователя в Telegram (если есть)
-    team_id = Column(Integer, ForeignKey('teams.id'))  # ID команды, к которой принадлежит участник
-    team = relationship("Team", back_populates="members")  # Связь с командой
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, nullable=False)
+    telegram_id = Column(Integer, nullable=True)
+    role_id = Column(Integer, ForeignKey("roles.id"))
+    
+    role = relationship("Role", back_populates="members")
 
-    role_id = Column(Integer, ForeignKey('roles.id'))  # ID роли участника
-    role = relationship("Role", back_populates="members")  # Роль участника
+    # Определяем связь many-to-many
+    teams = relationship("Team", secondary=member_team_table, back_populates="members")
 
 
 class Role(Base):
