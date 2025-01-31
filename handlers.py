@@ -3,6 +3,7 @@ import random
 import time
 import asyncio
 from html import escape
+import re
 
 # Библиотеки сторонних разработчиков
 from aiogram import types
@@ -30,16 +31,22 @@ async def add_team_command(message: Message):
     
     db = SessionLocal()
 
+    # Нормализация текста команды
+    raw_text = message.text or message.caption or ""
+    
+    # Парсинг аргументов
+    team_name, remainder = parse_quoted_argument(raw_text, "add_team")
+
+    print(team_name)
+
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/add_team'):
         db.close()
         return
-    
-    team_name, remainder = parse_quoted_argument(message.text, '/add_team')
 
     # Валидация
     if not team_name:
-        await message.reply('Использование: /add_team "Название команды"')
+        await message.reply('Использование: /add_team "<Название команды>"')
         db.close()
         return
 
@@ -73,10 +80,14 @@ async def add_member_command(message: Message):
         db.close()
         return
 
-    team_name, remainder = parse_quoted_argument(message.text, '/add_member')
+    # Нормализация текста команды
+    raw_text = message.text or message.caption or ""
+    
+    # Парсинг аргументов
+    team_name, remainder = parse_quoted_argument(raw_text, "add_member")
 
     if not team_name:
-        await message.reply('Использование: /add_member "Название команды" user1 user2 ...')
+        await message.reply('Использование: /add_member "<Название команды>" user1 user2 ...')
         db.close()
         return
     
@@ -161,10 +172,14 @@ async def remove_team_command(message: Message):
         db.close()
         return
     
-    team_name, remainder = parse_quoted_argument(message.text, '/remove_team')
+    # Нормализация текста команды
+    raw_text = message.text or message.caption or ""
+    
+    # Парсинг аргументов
+    team_name, remainder = parse_quoted_argument(raw_text, "remove_team")
     
     if not team_name:
-        await message.reply('Использование: /remove_team "Название команды"')
+        await message.reply('Использование: /remove_team "<Название команды>"')
         db.close()
         return
 
@@ -196,11 +211,14 @@ async def remove_member_command(message: Message):
         db.close()
         return
     
-
-    team_name, remainder = parse_quoted_argument(message.text, '/remove_member')
+    # Нормализация текста команды
+    raw_text = message.text or message.caption or ""
+    
+    # Парсинг аргументов
+    team_name, remainder = parse_quoted_argument(raw_text, "remove_member")
 
     if not team_name:
-        await message.reply('Использование: /remove_member "Название команды" user1 user2 ...')
+        await message.reply('Использование: /remove_member "<Название команды>" user1 user2 ...')
         db.close()
         return
     
@@ -220,8 +238,9 @@ async def remove_member_command(message: Message):
         username_without_at = username.lstrip('@')
 
         # Проверяем, есть ли пользователь в команде
-        # user_in_team = db.query(Member).filter(Member.team_id == team.id, Member.username == username_without_at).first()
         user_in_team = (db.query(Member).join(Member.teams).filter(Team.id == team.id,Member.username == username_without_at).first())
+
+        print(user_in_team)
 
         if user_in_team:
             # Устанавливаем NULL в поле team_id, удаляя пользователя из команды
@@ -277,7 +296,7 @@ async def tag_command(message: Message):
         full_text = message.caption  # без сохранения "сложной" разметки
 
     if not full_text:
-        await message.reply('Использование: /tag "Название команды" [-no-author] <текст>')
+        await message.reply('Использование: /tag "<Название команды>" [-no-author] <текст>')
         db.close()
         return
 
@@ -286,7 +305,7 @@ async def tag_command(message: Message):
     pattern = r'^/tag\s+"([^"]+)"\s*(.*)$'
     match = re.match(pattern, full_text, flags=re.DOTALL)
     if not match:
-        await message.reply('Использование: /tag "Название команды" [-no-author] <текст>')
+        await message.reply('Использование: /tag "<Название команды>" [-no-author] <текст>')
         db.close()
         return
 
@@ -717,7 +736,6 @@ async def teams_command(message: Message):
     teams_list = ""
     for team in teams:
         # Получаем участников команды
-        # members = db.query(Member).filter(Member.team_id == team.id).all()
         members = db.query(Member).join(Member.teams).filter(Team.id == team.id).all()
         member_names = [member.username for member in members]
 
@@ -1122,7 +1140,7 @@ async def topics_manage_command(message: Message):
     pattern = r'^/topics_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
     match = re.match(pattern, message.text, flags=re.DOTALL)
     if not match:
-        await message.reply('Использование: /topics_manage <add|edit|delete> "topic_name" [описание]')
+        await message.reply('Использование: /topics_manage <add|edit|delete> "<topic_name>" [описание]')
         db.close()
         return
 
@@ -1214,7 +1232,7 @@ async def topics_commands_manage_command(message: Message):
     pattern = r'^/topics_commands_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
     match = re.match(pattern, message.text, flags=re.DOTALL)
     if not match:
-        await message.reply('Использование: /topics_commands_manage <add|remove> "topic_name" <command1> <command2> ...')
+        await message.reply('Использование: /topics_commands_manage <add|remove> "<topic_name>" <command1> <command2> ...')
         db.close()
         return
 
@@ -1223,7 +1241,7 @@ async def topics_commands_manage_command(message: Message):
     remainder = match.group(3).strip()  # всё, что после
 
     if not remainder:
-        await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "topic_name" command1 command2 ...')
+        await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "<topic_name>" command1 command2 ...')
         db.close()
         return
 

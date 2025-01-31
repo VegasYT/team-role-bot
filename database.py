@@ -29,5 +29,5 @@ Base.metadata.create_all(bind=engine)
 def get_team_members(db, team_name: str):
     team = db.query(Team).filter(Team.team_name == team_name).first()
     if team:
-        return db.query(Member).filter(Member.team_id == team.id).all()
+        return team.members
     return []

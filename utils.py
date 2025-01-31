@@ -175,6 +175,7 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
     else:
         topic_name = None
 
+
     # Проверка на разрешение команды для данного топика
     if topic_name:
         command_allowed = is_command_allowed_in_topic(db, topic_name, command_name)
@@ -202,17 +203,16 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
 
 def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, str]:
     """
-    Ищет в command_text шаблон:
-      ^/команда "что-то в кавычках" (опционально) остаток
-    Возвращает (строка_в_кавычках, остаток).
-    Если нет совпадения, возвращает (None, None).
+    Обрабатывает команды форматов:
+    - /command "arg"
+    - /command@botname "arg"
+    - /COMMAND "arg"
     """
-    # Экранируем команду (вдруг есть спецсимволы)
-    pattern = rf'^{re.escape(command_name)}\s+"([^"]+)"\s*(.*)$'
-    match = re.match(pattern, command_text)
+    # Универсальный паттерн с учетом @бот и регистра
+    pattern = rf'^/{re.escape(command_name)}(@\w+)?\s+"([^"]+)"\s*(.*)$'
+    match = re.match(pattern, command_text, flags=re.IGNORECASE)
+    
     if not match:
-        return None, None  # Ничего не найдено
-
-    name_in_quotes = match.group(1)   # что внутри кавычек
-    remainder = match.group(2).strip()  # остаток строки (может быть пустым)
-    return name_in_quotes, remainder
+        return None, None
+    
+    return match.group(2), match.group(3).strip()  # group(2) - аргумент в кавычках
