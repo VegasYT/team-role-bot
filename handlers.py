@@ -35,7 +35,7 @@ async def add_team_command(message: Message):
     raw_text = message.text or message.caption or ""
     
     # Парсинг аргументов
-    team_name, remainder = parse_quoted_argument(raw_text, "add_team")
+    operation, team_name, remainder = parse_quoted_argument(raw_text, "add_team")
 
     print(team_name)
 
@@ -84,7 +84,7 @@ async def add_member_command(message: Message):
     raw_text = message.text or message.caption or ""
     
     # Парсинг аргументов
-    team_name, remainder = parse_quoted_argument(raw_text, "add_member")
+    operation, team_name, remainder = parse_quoted_argument(raw_text, "add_member")
 
     if not team_name:
         await message.reply('Использование: /add_member "<Название команды>" user1 user2 ...')
@@ -176,7 +176,7 @@ async def remove_team_command(message: Message):
     raw_text = message.text or message.caption or ""
     
     # Парсинг аргументов
-    team_name, remainder = parse_quoted_argument(raw_text, "remove_team")
+    operation, team_name, remainder = parse_quoted_argument(raw_text, "remove_team")
     
     if not team_name:
         await message.reply('Использование: /remove_team "<Название команды>"')
@@ -215,7 +215,7 @@ async def remove_member_command(message: Message):
     raw_text = message.text or message.caption or ""
     
     # Парсинг аргументов
-    team_name, remainder = parse_quoted_argument(raw_text, "remove_member")
+    operation, team_name, remainder = parse_quoted_argument(raw_text, "remove_member")
 
     if not team_name:
         await message.reply('Использование: /remove_member "<Название команды>" user1 user2 ...')
@@ -301,7 +301,7 @@ async def tag_command(message: Message):
         return
 
     # Парсинг аргументов
-    team_name, remainder = parse_quoted_argument(full_text, "tag")
+    operation, team_name, remainder = parse_quoted_argument(full_text, "tag")
     
     if not team_name:
         await message.reply('Использование: /remove_team "<Название команды>"')
@@ -1127,22 +1127,8 @@ async def topics_manage_command(message: Message):
         db.close()
         return
 
-    import re
-    # Шаблон:
-    #   /topics_manage\s+(\S+)\s+"([^"]+)"\s*(.*)
-    #   1) operation (add|edit|delete)
-    #   2) topic_name (в кавычках)
-    #   3) remainder (описание, может быть пустым)
-    pattern = r'^/topics_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
-    match = re.match(pattern, message.text, flags=re.DOTALL)
-    if not match:
-        await message.reply('Использование: /topics_manage <add|edit|delete> "<topic_name>" [описание]')
-        db.close()
-        return
-
-    operation = match.group(1).lower()  # add|edit|delete
-    topic_name = match.group(2)         # внутри кавычек
-    remainder = match.group(3).strip()  # описание или пусто
+    # Парсинг аргументов
+    operation, topic_name, remainder = parse_quoted_argument(message.text, "topics_manage")
 
     if operation == "add":
         if not remainder:

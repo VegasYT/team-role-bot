@@ -201,18 +201,27 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
     return True
 
 
-def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, str]:
+def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, str, str]:
     """
     Обрабатывает команды форматов:
     - /command "arg"
     - /command@botname "arg"
-    - /COMMAND "arg"
+    - /command action "arg"
+    - /command@botname action "arg" [description]
+    - /COMMAND action "arg" [description]
+    
+    Возвращает кортеж (action, _name, description).
+    Если action отсутствует, он будет пустым ("").
     """
-    # Универсальный паттерн с учетом @бот и регистра
-    pattern = rf'^/{re.escape(command_name)}(@\w+)?\s+"([^"]+)"\s*(.*)$'
+    # Универсальный паттерн с учётом @бота, регистра, действия и описания
+    pattern = rf'^/{re.escape(command_name)}(@\w+)?(?:\s+(\w+))?\s+"([^"]+)"\s*(.*)$'
     match = re.match(pattern, command_text, flags=re.IGNORECASE)
     
     if not match:
-        return None, None
+        return None, None, None
     
-    return match.group(2), match.group(3).strip()  # group(2) - аргумент в кавычках
+    action = match.group(2) or ""  # "add", "edit", "delete" или пустая строка
+    name = match.group(3)    # Тема в кавычках
+    description = match.group(4).strip()  # Опциональное описание
+    
+    return action, name, description
