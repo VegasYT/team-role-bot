@@ -300,17 +300,13 @@ async def tag_command(message: Message):
         db.close()
         return
 
-    # 2) С помощью RegEx ищем "Название команды" в кавычках и остальное
-    import re
-    pattern = r'^/tag\s+"([^"]+)"\s*(.*)$'
-    match = re.match(pattern, full_text, flags=re.DOTALL)
-    if not match:
-        await message.reply('Использование: /tag "<Название команды>" [-no-author] <текст>')
+    # Парсинг аргументов
+    team_name, remainder = parse_quoted_argument(full_text, "tag")
+    
+    if not team_name:
+        await message.reply('Использование: /remove_team "<Название команды>"')
         db.close()
         return
-
-    team_name = match.group(1)         # то, что внутри кавычек
-    remainder = match.group(2).strip() # всё, что идёт после
 
     # 3) Проверяем флаг -no-author (если он в начале остатка)
     if remainder.startswith('-no-author'):
