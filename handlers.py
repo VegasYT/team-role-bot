@@ -1205,22 +1205,8 @@ async def topics_commands_manage_command(message: Message):
         db.close()
         return
 
-    import re
-    # Шаблон:
-    #   /topics_commands_manage\s+(\S+)\s+"([^"]+)"\s*(.*)
-    #   1) operation (add|remove)
-    #   2) topic_name (в кавычках)
-    #   3) remainder (список команд)
-    pattern = r'^/topics_commands_manage\s+(\S+)\s+"([^"]+)"\s*(.*)$'
-    match = re.match(pattern, message.text, flags=re.DOTALL)
-    if not match:
-        await message.reply('Использование: /topics_commands_manage <add|remove> "<topic_name>" <command1> <command2> ...')
-        db.close()
-        return
-
-    operation = match.group(1).lower()   # add|remove
-    topic_name = match.group(2)         # внутри кавычек
-    remainder = match.group(3).strip()  # всё, что после
+    # Парсинг аргументов
+    operation, topic_name, remainder = parse_quoted_argument(message.text, "topics_commands_manage")
 
     if not remainder:
         await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "<topic_name>" command1 command2 ...')
