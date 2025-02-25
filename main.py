@@ -4,17 +4,17 @@ import asyncio
 # Библиотеки сторонних разработчиков
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat
 from typing import Tuple
 
 # Локальные модули
-from config import BOT_TOKEN
+from config import BOT_TOKEN, ALLOWED_CHAT_IDS  
 from handlers import (
     add_team_command, add_member_command, remove_team_command, remove_member_command,
     tag_command, help_command, ban_member_command, assign_role_command, teams_command,
     edit_handler_command, help_admin_command, role_manage_command, list_roles_command,
     role_commands_manage_command, list_topics_command, topics_manage_command,
-    topics_commands_manage_command, random_number_command
+    topics_commands_manage_command, random_number_command, random_choice_command
 )
 
 
@@ -37,7 +37,7 @@ async def set_bot_commands(bot: Bot) -> None:
     :param bot: Объект бота, для которого устанавливаются команды.
     :return: Нет возвращаемого значения (None).
     """
-
+    
     commands = [
         BotCommand(command="help", description="Показать список доступных команд"),
         BotCommand(command="add_team", description="Добавить новую команду"),
@@ -57,6 +57,7 @@ async def set_bot_commands(bot: Bot) -> None:
         BotCommand(command="topics_manage", description="Редактирование топиков"),
         BotCommand(command="topics_commands_manage", description="Добавление/удаление хендлеров у топиков"),
         BotCommand(command="random_number", description="Случайное число от 1"),
+        BotCommand(command="random_choice", description="Случайное из указанных значений"),
     ]
     await bot.set_my_commands(commands)
 
@@ -87,6 +88,7 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.message(Command("topics_manage"))(topics_manage_command)
     dp.message(Command("topics_commands_manage"))(topics_commands_manage_command)
     dp.message(Command("random_number"))(random_number_command)
+    dp.message(Command("random_choice"))(random_choice_command)
 
 
 async def main() -> None:
