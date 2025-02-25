@@ -15,7 +15,7 @@ from aiogram.exceptions import TelegramBadRequest
 from database import get_team_members, SessionLocal
 from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands
 from config import BOT_TOKEN, EMOJI_IDS
-from utils import check_user_and_permissions, parse_quoted_argument
+from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message
 
 
 bot = Bot(token=BOT_TOKEN)
@@ -65,7 +65,10 @@ async def add_team_command(message: Message):
 
     db.close()
 
-    await message.reply(f"Команда '{team_name}' успешно добавлена.")
+    await message.answer(f"Команда '{team_name}' успешно добавлена.")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def add_member_command(message: Message):
@@ -154,7 +157,10 @@ async def add_member_command(message: Message):
 
     db.close()
 
-    await message.reply(response_message)
+    await message.answer(response_message)
+    
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def remove_team_command(message: Message):
@@ -188,7 +194,10 @@ async def remove_team_command(message: Message):
     if team:
         db.delete(team)
         db.commit()
-        await message.reply(f"Команда '{team_name}' успешно удалена.")
+        await message.answer(f"Команда '{team_name}' успешно удалена.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
     else:
         await message.reply(f"Команда '{team_name}' не найдена.")
 
@@ -265,7 +274,10 @@ async def remove_member_command(message: Message):
 
     db.close()
 
-    await message.reply(response_message)
+    await message.answer(response_message)
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def tag_command(message: Message):
@@ -484,7 +496,10 @@ async def ban_member_command(message: Message):
 
     db.close()
 
-    await message.reply(response_message)
+    await message.answer(response_message)
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def assign_role_command(message: Message):
@@ -564,7 +579,10 @@ async def assign_role_command(message: Message):
 
     db.close()
 
-    await message.reply(response_message)
+    await message.answer(response_message)
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def help_command(message: Message):
@@ -629,14 +647,17 @@ async def help_command(message: Message):
         commands_list = "Нет доступных команд для вашей роли."
 
     help_message = f"""
-<b>🤖 Доступные команды:</b>
+    <b>🤖 Доступные команды:</b>
 
-{commands_list}
-"""
+    {commands_list}
+    """
 
     db.close()
 
-    await message.reply(help_message, parse_mode="HTML")
+    await message.answer(help_message, parse_mode="HTML")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def help_admin_command(message: Message):
@@ -707,7 +728,10 @@ async def help_admin_command(message: Message):
 
     db.close()
 
-    await message.reply(help_message, parse_mode="HTML")
+    await message.answer(help_message, parse_mode="HTML")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def teams_command(message: Message):
@@ -747,7 +771,10 @@ async def teams_command(message: Message):
     db.close()
 
     # Отправляем ответ пользователю
-    await message.reply(f"<b>Список команд и их участников:</b>\n\n{teams_list}", parse_mode="HTML")
+    await message.answer(f"<b>Список команд и их участников:</b>\n\n{teams_list}", parse_mode="HTML")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def edit_handler_command(message: Message):
@@ -807,8 +834,11 @@ async def edit_handler_command(message: Message):
 
     db.close()
 
-    await message.reply(f"Команда '{command_name}' успешно обновлена.\n"
+    await message.answer(f"Команда '{command_name}' успешно обновлена.\n"
                          f"Обновленный {column_name}: {new_value}")
+    
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def role_manage_command(message: Message):
@@ -858,7 +888,10 @@ async def role_manage_command(message: Message):
         db.commit()
 
         db.close()
-        await message.reply(f"Роль '{role_name}' успешно создана с уровнем {level}.")
+        await message.answer(f"Роль '{role_name}' успешно создана с уровнем {level}.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
     # Редактирование существующей роли
     elif operation == "edit_name":
@@ -880,6 +913,7 @@ async def role_manage_command(message: Message):
         existing_role = db.query(Role).filter(Role.role_name == new_role_name).first()
         if existing_role:
             await message.reply(f"Роль с именем '{new_role_name}' уже существует.")
+
             db.close()
             return
 
@@ -888,7 +922,10 @@ async def role_manage_command(message: Message):
         db.commit()
         db.close()
 
-        await message.reply(f"Имя роли '{role_name}' успешно изменено на '{new_role_name}'.")
+        await message.answer(f"Имя роли '{role_name}' успешно изменено на '{new_role_name}'.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
 
     # Удаление роли
@@ -905,7 +942,10 @@ async def role_manage_command(message: Message):
         db.commit()
 
         db.close()
-        await message.reply(f"Роль '{role_name}' была удалена.")
+        await message.answer(f"Роль '{role_name}' была удалена.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
     # Изменение уровня роли
     elif operation == "edit_level":
@@ -928,7 +968,10 @@ async def role_manage_command(message: Message):
         db.commit()
 
         db.close()
-        await message.reply(f"Уровень роли '{role_name}' обновлен. Новый уровень: {new_level}.")
+        await message.answer(f"Уровень роли '{role_name}' обновлен. Новый уровень: {new_level}.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
     
     else:
         await message.reply("Недопустимая операция. Доступные операции: create, edit, delete, edit_level.")
@@ -972,7 +1015,10 @@ async def list_roles_command(message: Message):
     db.close()
 
     # Отправляем сообщение пользователю
-    await message.reply(roles_list, parse_mode="HTML")
+    await message.answer(roles_list, parse_mode="HTML")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def role_commands_manage_command(message: Message):
@@ -1065,7 +1111,10 @@ async def role_commands_manage_command(message: Message):
     if not successful_operations and not failed_operations:
         response_message = "Не было выполнено ни одной операции."
 
-    await message.reply(response_message)
+    await message.answer(response_message)
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def list_topics_command(message: Message):
@@ -1108,8 +1157,10 @@ async def list_topics_command(message: Message):
         topics_message += f"🔹 <b>{topic.topic_name}</b>\n{description}\nКоманды:\n{commands_list}\n\n"
 
     db.close()
-    await message.reply(topics_message, parse_mode="HTML")
+    await message.answer(topics_message, parse_mode="HTML")
 
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 async def topics_manage_command(message: Message):
@@ -1150,7 +1201,10 @@ async def topics_manage_command(message: Message):
         db.commit()
         db.close()
 
-        await message.reply(f"Топик '{topic_name}' успешно добавлен с описанием: {description}.")
+        await message.answer(f"Топик '{topic_name}' успешно добавлен с описанием: {description}.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
     elif operation == "edit":
         if not remainder:
@@ -1170,7 +1224,10 @@ async def topics_manage_command(message: Message):
         db.commit()
         db.close()
 
-        await message.reply(f"Описание топика '{topic_name}' успешно обновлено.")
+        await message.answer(f"Описание топика '{topic_name}' успешно обновлено.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
     elif operation == "delete":
         # Ищем топик по имени
@@ -1184,7 +1241,10 @@ async def topics_manage_command(message: Message):
         db.commit()
         db.close()
 
-        await message.reply(f"Топик '{topic_name}' был удален.")
+        await message.answer(f"Топик '{topic_name}' был удален.")
+
+        # Удаляем сообщение пользователя после успешной обработки
+        await delete_user_message(message)
 
     else:
         await message.reply("Недопустимая операция. Доступные операции: add, edit, delete.")
@@ -1209,7 +1269,7 @@ async def topics_commands_manage_command(message: Message):
     operation, topic_name, remainder = parse_quoted_argument(message.text, "topics_commands_manage")
 
     if not remainder:
-        await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "<topic_name>" command1 command2 ...')
+        await message.reply('Укажите хотя бы одну команду: /topics_commands_manage <add|remove> "<topic_name>" /command1 /command2 ...')
         db.close()
         return
 
@@ -1264,7 +1324,10 @@ async def topics_commands_manage_command(message: Message):
         result_message = "Недопустимая операция. Доступные операции: add, remove."
 
     db.close()
-    await message.reply(result_message)
+    await message.answer(result_message)
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
 
 
 # Обработчик команды /random
@@ -1306,10 +1369,48 @@ async def random_number_command(message: types.Message):
 
     # Отправляем случайный эмодзи из списка
     random_emoji_id = random.choice(EMOJI_IDS)
-    await message.reply_sticker(random_emoji_id)
+    await message.answer_sticker(random_emoji_id)
 
     # Делаем небольшую задержку для "анимированного" эффекта
     await asyncio.sleep(1)
 
     # Отправляем результат сгенерированного числа
-    await message.reply(f"🎲 Результат: {random_number}")
+    await message.answer(f"🎲 Результат: {random_number}")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
+
+
+async def random_choice_command(message: types.Message):
+    """
+    Обрабатывает команду для выбора случайного значения из заданного списка.
+    
+    :param message: Сообщение от пользователя, содержащее команду и список значений.
+    :return: Ответ в чат с результатом случайного выбора.
+    """
+    db = SessionLocal()
+
+    # Проверка разрешений пользователя
+    if not await check_user_and_permissions(db, message, '/random_choice'):
+        db.close()
+        return
+
+    # Разбираем сообщение, чтобы извлечь список значений
+    args = message.text.split()
+
+    # Если аргументов нет или они некорректные
+    if len(args) < 2:
+        await message.reply("Пожалуйста, введите команду в формате: /random_choice <значение1> <значение2> ...")
+        return
+
+    # Список значений для случайного выбора
+    choices = args[1:]
+
+    # Выбираем случайное значение из списка с помощью функции choice
+    random_choice_value = await choice(choices)
+
+    # Отправляем результат
+    await message.answer(f"🎲 Результат: {random_choice_value}")
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)

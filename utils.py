@@ -1,5 +1,7 @@
 # Стандартные библиотеки
 import re
+import asyncio
+import random
 
 # Библиотеки сторонних разработчиков
 from aiogram.types import Message
@@ -7,7 +9,7 @@ from sqlalchemy.orm import Session
 
 # Локальные модули
 from models import CommandHistory, Member, Command, RoleCommands, Role, Topic
-from config import ALLOWED_CHAT_IDS
+from config import ALLOWED_CHAT_IDS, EMOJI_IDS
 
 
 async def log_command_history(db: Session, user_id: int, user_telegram_id: int, username: str, command_text: str) -> None:
@@ -185,15 +187,11 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
             return False
 
     # Проверка прав пользователя на выполнение команды
-    # try:
-    #     if not await has_permission(member, command_name, message.text, db):
-    #         print(message.text)
-    #         await message.reply("У вас нет прав для выполнения этой команды.")
-    #         db.close()
-    #         return False
-    # except:
-    if not await has_permission(member, command_name, message.caption, db): 
-        print(message.caption)
+    # Если message.caption пустой, используем message.text
+    caption_or_text = message.caption if message.caption else message.text
+
+    if not await has_permission(member, command_name, caption_or_text, db): 
+        print(caption_or_text)
         await message.reply("У вас нет прав для выполнения этой команды.")
         db.close()
         return False
@@ -225,3 +223,26 @@ def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, st
     description = match.group(4).strip()  # Опциональное описание
     
     return action, name, description
+
+
+async def choice(choices: list[str | int]) -> str | int:
+    """
+    Выбирает случайный элемент из списка с использованием многократных итераций для повышения случайности.
+    
+    :param choices: Список значений для выбора.
+    :return: Случайно выбранный элемент.
+    """
+    rerank_elements = []
+    for _ in range(3):  # 3 итерации для перераспределения
+        answers = [random.choice(choices) for _ in range(10)]  # 10 итераций для генерации случайных элементов
+        rerank_elements.append(max(set(answers), key=answers.count))
+
+    return max(set(rerank_elements), key=rerank_elements.count)
+
+
+async def delete_user_message(message: Message):
+    """Удаляет сообщение пользователя после успешного выполнения команды."""
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Ошибка при удалении сообщения: {e}")
