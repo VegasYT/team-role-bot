@@ -210,10 +210,21 @@ def extract_command_name(full_command: str) -> str:
     Пример:
     - "/random_choice@informator_youtube_bot 1 / 2 / 3 / 4" -> "/random_choice"
     - "/help" -> "/help"
+    - Пустая строка или некорректный ввод -> ""
     """
-    # Убираем аргументы и имя бота (если есть)
-    command_name = full_command.split()[0]  # Берем первую часть (команда и, возможно, имя бота)
-    command_name = command_name.split('@')[0]  # Убираем часть после @ (имя бота)
+    if not full_command:  # Проверка на пустую строку
+        return ""
+
+    # Разделяем строку по пробелам и берем первую часть
+    parts = full_command.split()
+    if not parts:  # Если после разделения нет частей (например, строка состояла только из пробелов)
+        return ""
+
+    command_with_bot = parts[0]  # Первая часть — команда и, возможно, имя бота
+
+    # Убираем часть после @ (имя бота)
+    command_name = command_with_bot.split('@')[0]
+
     return command_name
 
 
@@ -271,6 +282,9 @@ def generate_bar_chart(title, x_labels, y_values, x_label, y_label):
     Генерирует столбчатый график с индивидуальным градиентом для каждого столбца.
     Сохраняет график в PNG-файл и возвращает имя файла.
     """
+    if not x_labels or not y_values:
+        raise ValueError("Нет данных для построения графика")
+
     filename = f"chart_{uuid.uuid4().hex}.png"
 
     with plt.style.context(STYLE_URL):

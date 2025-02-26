@@ -1333,6 +1333,7 @@ async def topics_commands_manage_command(message: Message):
     await delete_user_message(message)
 
 
+# Обработчик команды /random
 async def random_number_command(message: types.Message):
     """
     Обрабатывает команду генерации случайного числа. Генерирует случайное число в пределах указанного пользователем диапазона и отправляет его вместе с случайным эмодзи и стикером.
@@ -1440,14 +1441,18 @@ async def top_commands_command(message: types.Message):
     command_counts = {}
     for record in commands_history:
         command_name = extract_command_name(record.command)
-        command_counts[command_name] = command_counts.get(command_name, 0) + 1
+        if command_name:  # Игнорируем пустые команды
+            command_counts[command_name] = command_counts.get(command_name, 0) + 1
 
-    sorted_commands = sorted(command_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    # Удаляем пустые команды из статистики
+    filtered_commands = {k: v for k, v in command_counts.items() if k}
 
-    if not sorted_commands:
+    if not filtered_commands:
         await message.reply("❌ За указанный период нет данных о командах.")
         db.close()
         return
+
+    sorted_commands = sorted(filtered_commands.items(), key=lambda x: x[1], reverse=True)[:5]
 
     commands, counts = zip(*sorted_commands)
 
