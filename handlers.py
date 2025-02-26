@@ -3,19 +3,22 @@ import random
 import time
 import asyncio
 from html import escape
-import re
+from datetime import datetime, timedelta
+import os
+import uuid
 
 # Библиотеки сторонних разработчиков
 from aiogram import types
 from aiogram.types import Message
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
+import matplotlib.pyplot as plt
 
 # Локальные модули
 from database import get_team_members, SessionLocal
-from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands
+from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands, CommandHistory
 from config import BOT_TOKEN, EMOJI_IDS
-from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message
+from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message, extract_command_name, send_chart
 
 
 bot = Bot(token=BOT_TOKEN)
@@ -28,12 +31,12 @@ async def add_team_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и название команды.
     :return: Ответ в чат о результате добавления команды.
     """
-    
+
     db = SessionLocal()
 
     # Нормализация текста команды
     raw_text = message.text or message.caption or ""
-    
+
     # Парсинг аргументов
     operation, team_name, remainder = parse_quoted_argument(raw_text, "add_team")
 
@@ -75,7 +78,7 @@ async def add_member_command(message: Message):
     """
     Обрабатывает команду для добавления пользователей в команду (/add_member). Пользователи могут состоять сразу в нескольких командах.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -85,7 +88,7 @@ async def add_member_command(message: Message):
 
     # Нормализация текста команды
     raw_text = message.text or message.caption or ""
-    
+
     # Парсинг аргументов
     operation, team_name, remainder = parse_quoted_argument(raw_text, "add_member")
 
@@ -93,12 +96,12 @@ async def add_member_command(message: Message):
         await message.reply('Использование: /add_member "<Название команды>" user1 user2 ...')
         db.close()
         return
-    
+
     if not remainder:
         await message.reply('Укажите хотя бы одного пользователя: /add_member "Название команды" user1 user2 ...')
         db.close()
         return
-    
+
     usernames = remainder.split()
     team = db.query(Team).filter(Team.team_name == team_name).first()
 
@@ -125,7 +128,7 @@ async def add_member_command(message: Message):
         else:
             # Создаем нового пользователя
             new_user = Member(username=username_without_at)
-            
+
             # Назначаем роль по умолчанию
             default_role = db.query(Role).filter(Role.role_name == 'default_user').first()
             if not default_role:
@@ -158,7 +161,7 @@ async def add_member_command(message: Message):
     db.close()
 
     await message.answer(response_message)
-    
+
     # Удаляем сообщение пользователя после успешной обработки
     await delete_user_message(message)
 
@@ -170,20 +173,20 @@ async def remove_team_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и название удаляемой команды.
     :return: Ответ в чат с результатами удаления команды.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/remove_team'):
         db.close()
         return
-    
+
     # Нормализация текста команды
     raw_text = message.text or message.caption or ""
-    
+
     # Парсинг аргументов
     operation, team_name, remainder = parse_quoted_argument(raw_text, "remove_team")
-    
+
     if not team_name:
         await message.reply('Использование: /remove_team "<Название команды>"')
         db.close()
@@ -212,17 +215,17 @@ async def remove_member_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду, название команды и список пользователей для удаления.
     :return: Ответ в чат с результатами удаления пользователей из команды.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/remove_member'):
         db.close()
         return
-    
+
     # Нормализация текста команды
     raw_text = message.text or message.caption or ""
-    
+
     # Парсинг аргументов
     operation, team_name, remainder = parse_quoted_argument(raw_text, "remove_member")
 
@@ -230,7 +233,7 @@ async def remove_member_command(message: Message):
         await message.reply('Использование: /remove_member "<Название команды>" user1 user2 ...')
         db.close()
         return
-    
+
     usernames = remainder.split()
 
     team = db.query(Team).filter(Team.team_name == team_name).first()
@@ -287,7 +290,7 @@ async def tag_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду, название команды и текст для тега.
     :return: Ответ в чат с тегом, упоминанием участников и отправителя, с возможностью отправки медиа.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение
@@ -314,7 +317,7 @@ async def tag_command(message: Message):
 
     # Парсинг аргументов
     operation, team_name, remainder = parse_quoted_argument(full_text, "tag")
-    
+
     if not team_name:
         await message.reply('Использование: /remove_team "<Название команды>"')
         db.close()
@@ -328,7 +331,7 @@ async def tag_command(message: Message):
     # Остаток считаем пользовательским сообщением (HTML/текст)
     custom_message = remainder
 
-    # --- Далее ваша логика, без изменений: 
+    # --- Далее ваша логика, без изменений:
     members = get_team_members(db, team_name)
     if not members:
         await message.reply(f"Команда '{team_name}' не найдена или не имеет участников.")
@@ -423,7 +426,7 @@ async def ban_member_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и список пользователей для бана.
     :return: Ответ в чат с результатами бана пользователей.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -509,7 +512,7 @@ async def assign_role_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду, роль и список пользователей для назначения роли.
     :return: Ответ в чат с результатами назначения ролей пользователям.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -592,14 +595,14 @@ async def help_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду для запроса помощи.
     :return: Ответ в чат с доступными командами и их описанием.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/help'):
         db.close()
         return
-    
+
     # Получаем данные о пользователе
     member = db.query(Member).filter(Member.telegram_id == message.from_user.id).first()
 
@@ -611,7 +614,7 @@ async def help_command(message: Message):
         RoleCommands.role_id == role.id,
         Command.is_admin_command == False  # Фильтрация по полю is_admin_command
     ).all()
-    
+
     # Формируем описание команд
     commands_list = ""
     for command in role_commands:
@@ -623,26 +626,26 @@ async def help_command(message: Message):
 
         # Добавляем название команды
         command_message += f"<b>{command.command_name}</b>\n"
-        
+
         # Добавляем описание команды, если оно есть
         if command.description:
             command_message += f"• Описание: {command.description}\n"
-        
+
         # Добавляем пример использования команды, если он есть
         if command.example:
             command_message += f"• Пример: {command.example}\n"
-        
+
         # Добавляем параметры команды, если они есть
         if command.parameters:
             command_message += f"• Параметры: {command.parameters}\n"
-        
+
         # Добавляем примечание о команде, если оно есть
         if command.note:
             command_message += f"• Примечание: {command.note}\n"
-        
+
         # Добавляем команду в общий список команд
         commands_list += command_message + "\n"
-    
+
     if not commands_list:
         commands_list = "Нет доступных команд для вашей роли."
 
@@ -667,14 +670,14 @@ async def help_admin_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду.
     :return: Ответ в чат с описанием доступных административных команд и ролей.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/help_admin'):
         db.close()
         return
-    
+
     # Получаем список всех команд, которые являются административными
     admin_commands = db.query(Command).filter(Command.is_admin_command == True).all()
 
@@ -694,23 +697,23 @@ async def help_admin_command(message: Message):
 
         # Добавляем название команды
         command_message += f"<b>{command.command_name}</b>\n"
-        
+
         # Добавляем описание команды, если оно есть
         if command.description:
             command_message += f"• Описание: {command.description}\n"
-        
+
         # Добавляем пример использования команды, если он есть
         if command.example:
             command_message += f"• Пример: {command.example}\n"
-        
+
         # Добавляем параметры команды, если они есть
         if command.parameters:
             command_message += f"• Параметры: \n{command.parameters}\n"
-        
+
         # Добавляем примечание о команде, если оно есть
         if command.note:
             command_message += f"• Примечание: {command.note}\n"
-        
+
         # Добавляем команду в общий список команд
         commands_list += command_message + "\n"
 
@@ -741,9 +744,9 @@ async def teams_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду.
     :return: Ответ в чат с перечнем команд и участников.
     """
-    
+
     db = SessionLocal()
-    
+
     # Проверяем пользователя, чат и разрешение команды
     if not await check_user_and_permissions(db, message, '/teams'):
         db.close()
@@ -784,7 +787,7 @@ async def edit_handler_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат с уведомлением об успешном редактировании команды.
     """
-    
+
     db = SessionLocal()
 
     # Получаем данные о пользователе
@@ -836,7 +839,7 @@ async def edit_handler_command(message: Message):
 
     await message.answer(f"Команда '{command_name}' успешно обновлена.\n"
                          f"Обновленный {column_name}: {new_value}")
-    
+
     # Удаляем сообщение пользователя после успешной обработки
     await delete_user_message(message)
 
@@ -848,7 +851,7 @@ async def role_manage_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат с результатами операции с ролью.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -857,12 +860,12 @@ async def role_manage_command(message: Message):
         return
 
     args = message.text.split(maxsplit=4)
-    
+
     if len(args) < 3:
         await message.reply("Использование: /role_manage <create|edit|delete|edit_level> <role_name> <new_value>")
         db.close()
         return
-    
+
     operation = args[1].lower()
     role_name = args[2]
 
@@ -899,7 +902,7 @@ async def role_manage_command(message: Message):
             await message.reply("Для редактирования роли укажите новое имя роли (например, 'edit_name <old_role_name> <new_role_name>').")
             db.close()
             return
-        
+
         new_role_name = args[3]
 
         # Ищем роль по имени
@@ -972,7 +975,7 @@ async def role_manage_command(message: Message):
 
         # Удаляем сообщение пользователя после успешной обработки
         await delete_user_message(message)
-    
+
     else:
         await message.reply("Недопустимая операция. Доступные операции: create, edit, delete, edit_level.")
         db.close()
@@ -985,7 +988,7 @@ async def list_roles_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду.
     :return: Ответ в чат с перечнем ролей и связанных с ними команд.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя и разрешение на команду
@@ -1002,7 +1005,7 @@ async def list_roles_command(message: Message):
         for role in roles:
             # Получаем команды, доступные для данной роли
             commands = db.query(Command).join(RoleCommands).filter(RoleCommands.role_id == role.id).all()
-            
+
             # Формируем строку с командами для роли
             commands_list = ", ".join([command.command_name for command in commands]) if commands else "Нет доступных команд"
 
@@ -1024,11 +1027,11 @@ async def list_roles_command(message: Message):
 async def role_commands_manage_command(message: Message):
     """
     Обрабатывает команду управления командами для ролей (/role_commands_manage), позволяя добавлять или удалять команды для заданной роли.
-    
+
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат с результатами добавления или удаления команд для роли.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -1124,7 +1127,7 @@ async def list_topics_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду.
     :return: Ответ в чат с перечнем топиков и команд, связанных с ними.
     """
-    
+
     db = SessionLocal()
 
     # Проверка на разрешения
@@ -1147,7 +1150,7 @@ async def list_topics_command(message: Message):
 
         # Получаем список команд для каждого топика
         commands_in_topic = db.query(Command).join(TopicCommands).filter(TopicCommands.topic_id == topic.id).all()
-        
+
         # Формируем строку с командами
         if commands_in_topic:
             commands_list = "\n".join([f"  - {command.command_name}" for command in commands_in_topic])
@@ -1170,7 +1173,7 @@ async def topics_manage_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат, уведомляющий пользователя о результатах операции с топиком.
     """
-    
+
     db = SessionLocal()
 
     # Проверяем пользователя, чат и разрешение команды
@@ -1258,7 +1261,7 @@ async def topics_commands_manage_command(message: Message):
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат, уведомляющий пользователя о результатах операции с командами топика.
     """
-    
+
     db = SessionLocal()
 
     if not await check_user_and_permissions(db, message, '/topics_commands_manage'):
@@ -1330,7 +1333,6 @@ async def topics_commands_manage_command(message: Message):
     await delete_user_message(message)
 
 
-# Обработчик команды /random
 async def random_number_command(message: types.Message):
     """
     Обрабатывает команду генерации случайного числа. Генерирует случайное число в пределах указанного пользователем диапазона и отправляет его вместе с случайным эмодзи и стикером.
@@ -1338,7 +1340,7 @@ async def random_number_command(message: types.Message):
     :param message: Сообщение от пользователя, содержащее команду и аргументы.
     :return: Ответ в чат с результатом генерации случайного числа и случайным эмодзи.
     """
-    
+
     db = SessionLocal()
 
     # Генерация случайного сид на основе времени и ID сообщения
@@ -1377,9 +1379,6 @@ async def random_number_command(message: types.Message):
     # Отправляем результат сгенерированного числа
     await message.answer(f"🎲 Результат: {random_number}")
 
-    # Удаляем сообщение пользователя после успешной обработки
-    await delete_user_message(message)
-
 
 async def random_choice_command(message: types.Message):
     """
@@ -1396,21 +1395,181 @@ async def random_choice_command(message: types.Message):
         return
 
     # Разбираем сообщение, чтобы извлечь список значений
-    args = message.text.split()
-
-    # Если аргументов нет или они некорректные
-    if len(args) < 2:
-        await message.reply("Пожалуйста, введите команду в формате: /random_choice <значение1> <значение2> ...")
+    # Убираем команду и разделяем оставшуюся часть по символу '/'
+    command_parts = message.text.split(maxsplit=1)
+    if len(command_parts) < 2:
+        await message.reply("Пожалуйста, введите команду в формате: /random_choice <значение1> / <значение2> / ...")
         return
 
-    # Список значений для случайного выбора
-    choices = args[1:]
+    # Разделяем аргументы по символу '/'
+    choices = [choice.strip() for choice in command_parts[1].split('/') if choice.strip()]
+
+    # Если аргументов нет или они некорректные
+    if not choices:
+        await message.reply("Пожалуйста, введите команду в формате: /random_choice <значение1> / <значение2> / ...")
+        return
 
     # Выбираем случайное значение из списка с помощью функции choice
     random_choice_value = await choice(choices)
 
     # Отправляем результат
     await message.answer(f"🎲 Результат: {random_choice_value}")
+
+
+async def top_commands_command(message: types.Message):
+    """
+    Показывает топ самых популярных команд за указанный период.
+
+    :param message: Сообщение от пользователя, содержащее команду и список значений.
+    :return: Ответ в чат в виде графика со статистикой.
+    """
+    db = SessionLocal()
+
+    if not await check_user_and_permissions(db, message, '/top_commands'):
+        db.close()
+        return
+
+    period = message.text.split()[1] if len(message.text.split()) > 1 else "30d"
+    days = int(period[:-1])
+    start_date = datetime.now() - timedelta(days=days)
+
+    commands_history = db.query(CommandHistory.command) \
+                         .filter(CommandHistory.timestamp >= start_date) \
+                         .all()
+
+    command_counts = {}
+    for record in commands_history:
+        command_name = extract_command_name(record.command)
+        command_counts[command_name] = command_counts.get(command_name, 0) + 1
+
+    sorted_commands = sorted(command_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    if not sorted_commands:
+        await message.reply("❌ За указанный период нет данных о командах.")
+        db.close()
+        return
+
+    commands, counts = zip(*sorted_commands)
+
+    await send_chart(
+        message=message,
+        title=f"Топ команд за последние {days} дней",
+        x_labels=commands,
+        y_values=counts,
+        x_label="Команды",
+        y_label="Количество вызовов",
+        caption=f"📊 Топ самых популярных команд за последние {days} дней"
+    )
+
+    db.close()
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
+
+
+async def top_users_handler_command(message: types.Message):
+    """
+    Показывает топ пользователей для выбранной команды за указанный период.
+
+    :param message: Сообщение от пользователя, содержащее команду и список значений.
+    :return: Ответ в чат в виде графика со статистикой.
+    """
+    db = SessionLocal()
+
+    if not await check_user_and_permissions(db, message, '/top_users_handler'):
+        db.close()
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        await message.reply("Пожалуйста, укажите команду и период (например, /top_users_handler /help 10d).")
+        db.close()
+        return
+
+    command = args[1]
+    period = args[2] if len(args) > 2 else "30d"
+    days = int(period[:-1])
+    start_date = datetime.now() - timedelta(days=days)
+
+    commands_history = db.query(CommandHistory.username, CommandHistory.command) \
+                         .filter(CommandHistory.timestamp >= start_date) \
+                         .all()
+
+    user_counts = {}
+    for username, full_command in commands_history:
+        if extract_command_name(full_command) == command:
+            user_counts[username] = user_counts.get(username, 0) + 1
+
+    sorted_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    if not sorted_users:
+        await message.reply(f"❌ За указанный период нет данных по команде {command}.")
+        db.close()
+        return
+
+    usernames, counts = zip(*sorted_users)
+
+    await send_chart(
+        message=message,
+        title=f"Топ пользователей для команды {command}",
+        x_labels=usernames,
+        y_values=counts,
+        x_label="Пользователи",
+        y_label="Количество вызовов",
+        caption=f"📊 Топ пользователей, использовавших {command} за последние {days} дней"
+    )
+
+    db.close()
+
+    # Удаляем сообщение пользователя после успешной обработки
+    await delete_user_message(message)
+
+
+async def top_users_command(message: types.Message):
+    """
+    Показывает топ пользователей, которые чаще всего обращались к боту за указанный период.
+
+    :param message: Сообщение от пользователя, содержащее команду и список значений.
+    :return: Ответ в чат в виде графика со статистикой.
+    """
+    db = SessionLocal()
+
+    if not await check_user_and_permissions(db, message, '/top_users'):
+        db.close()
+        return
+
+    period = message.text.split()[1] if len(message.text.split()) > 1 else "30d"
+    days = int(period[:-1])
+    start_date = datetime.now() - timedelta(days=days)
+
+    commands_history = db.query(CommandHistory.username) \
+                         .filter(CommandHistory.timestamp >= start_date) \
+                         .all()
+
+    user_counts = {}
+    for (username,) in commands_history:
+        user_counts[username] = user_counts.get(username, 0) + 1
+
+    sorted_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    if not sorted_users:
+        await message.reply("❌ За указанный период нет данных о пользователях.")
+        db.close()
+        return
+
+    usernames, counts = zip(*sorted_users)
+
+    await send_chart(
+        message=message,
+        title=f"Топ пользователей за последние {days} дней",
+        x_labels=usernames,
+        y_values=counts,
+        x_label="Пользователи",
+        y_label="Количество обращений",
+        caption=f"📊 Топ пользователей за последние {days} дней"
+    )
+
+    db.close()
 
     # Удаляем сообщение пользователя после успешной обработки
     await delete_user_message(message)

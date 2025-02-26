@@ -1,15 +1,20 @@
 # Стандартные библиотеки
 import re
-import asyncio
 import random
+import os
+import numpy as np
+import uuid
 
 # Библиотеки сторонних разработчиков
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from sqlalchemy.orm import Session
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Rectangle
 
 # Локальные модули
 from models import CommandHistory, Member, Command, RoleCommands, Role, Topic
-from config import ALLOWED_CHAT_IDS, EMOJI_IDS
+from config import ALLOWED_CHAT_IDS, STYLE_URL
 
 
 async def log_command_history(db: Session, user_id: int, user_telegram_id: int, username: str, command_text: str) -> None:
@@ -199,6 +204,19 @@ async def check_user_and_permissions(db: Session, message: Message, command_name
     return True
 
 
+def extract_command_name(full_command: str) -> str:
+    """
+    Извлекает имя команды из полного вызова команды.
+    Пример:
+    - "/random_choice@informator_youtube_bot 1 / 2 / 3 / 4" -> "/random_choice"
+    - "/help" -> "/help"
+    """
+    # Убираем аргументы и имя бота (если есть)
+    command_name = full_command.split()[0]  # Берем первую часть (команда и, возможно, имя бота)
+    command_name = command_name.split('@')[0]  # Убираем часть после @ (имя бота)
+    return command_name
+
+
 def parse_quoted_argument(command_text: str, command_name: str) -> tuple[str, str, str]:
     """
     Обрабатывает команды форматов:
@@ -246,3 +264,105 @@ async def delete_user_message(message: Message):
         await message.delete()
     except Exception as e:
         print(f"Ошибка при удалении сообщения: {e}")
+
+
+def generate_bar_chart(title, x_labels, y_values, x_label, y_label):
+    """
+    Генерирует столбчатый график с индивидуальным градиентом для каждого столбца.
+    Сохраняет график в PNG-файл и возвращает имя файла.
+    """
+    filename = f"chart_{uuid.uuid4().hex}.png"
+
+    with plt.style.context(STYLE_URL):
+        plt.rcParams['font.family'] = 'DejaVu Sans'  # Поддержка кириллицы и эмодзи
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Определяем цветовые пары для градиентов
+        gradient_colors = [
+            ("#00FFFF", "#0066FF"),
+            ("#FF6F61", "#FF2E63"),
+            ("#FFC048", "#FF7F50"),
+            ("#9AECDB", "#55E6C1"),
+            ("#D6A2E8", "#C44569"),
+            ("#A3CB38", "#009432"),
+            ("#F5C469", "#FF9F1A"),
+        ]
+
+        # Построение столбцов с градиентом
+        bar_width = 0.6
+        x_positions = np.arange(len(x_labels))
+
+        # Определяем верхний предел для оси Y с отступом (10% выше максимума)
+        max_y = max(y_values) * 1.15  
+        ax.set_ylim(0, max_y)  
+
+        for i, (x, y) in enumerate(zip(x_positions, y_values)):
+            start_color, end_color = gradient_colors[i % len(gradient_colors)]
+            cmap = LinearSegmentedColormap.from_list(f"bar_{i}", [start_color, end_color])
+
+            # Создаем вертикальный градиент
+            gradient = np.linspace(0, 1, 256).reshape(256, 1)
+            ax.imshow(
+                gradient,
+                extent=(x - bar_width / 2, x + bar_width / 2, 0, y),
+                cmap=cmap,
+                aspect='auto',
+                zorder=2
+            )
+
+            # Значения над столбцами
+            ax.text(
+                x,
+                y + (max_y * 0.02),  # Отступ сверху для читаемости
+                f"{y}",
+                ha='center',
+                fontsize=12,
+                fontweight="bold",
+                color="white"
+            )
+
+        # Настройки осей и подписей
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(x_labels, fontsize=12, color='white', rotation=0) 
+        ax.set_title(title, fontsize=18, fontweight="bold", color="white", pad=20)
+        ax.set_xlabel(x_label, fontsize=14, fontweight="bold", color="white", labelpad=10)
+        ax.set_ylabel(y_label, fontsize=14, fontweight="bold", color="white", labelpad=10)
+
+        # Масштабирование по горизонтали с отступами
+        ax.set_xlim(-0.5, len(x_labels) - 0.5)
+
+        # Стилизация осей и сетки
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('white')
+        ax.spines['bottom'].set_color('white')
+        ax.grid(True, linestyle='--', alpha=0.5, color='gray')
+
+        plt.tight_layout()
+        plt.savefig(filename, format='png', dpi=200)
+        plt.close()
+
+    return filename
+
+
+async def send_chart(message, title, x_labels, y_values, x_label, y_label, caption):
+    """
+    Генерирует график и отправляет его пользователю.
+
+    :param message: Объект сообщения.
+    :param title: Заголовок графика.
+    :param x_labels: Метки оси X.
+    :param y_values: Значения оси Y.
+    :param x_label: Подпись оси X.
+    :param y_label: Подпись оси Y.
+    :param caption: Подпись к отправляемому изображению.
+    """
+    filename = generate_bar_chart(title, x_labels, y_values, x_label, y_label)
+
+    try:
+        photo = FSInputFile(filename)
+        await message.answer_photo(photo=photo, caption=caption)
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)

@@ -19,3 +19,6 @@ EMOJI_IDS = [
     "CAACAgIAAxkBAAENiXdnjSZXxjAiaJ5ZbOf4YAeyYoea2AACkWQAAgKzQUkP6LagBV8--DYE",
     "CAACAgIAAxkBAAENiXpnjSZhyrmSgjyq6-1YRgOEj1p3AwAC82AAAodRQEmc10gts7CCxDYE"
 ]
+
+# Стиль графиков статистики
+STYLE_URL = "https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pitayasmoothie-dark.mplstyle"
