@@ -55,11 +55,11 @@ git clone https://github.com/VegasYT/team-role-bot.git
 
 ![Topic](https://i.imgur.com/PdRsGt7.png)
 ```
-/manage_topics add new_topic "Болталка"
+/manage_topics add "Болталка"
 ```
 2. ### Добавление хендлеров, которые можно писать в топике.
 ```
-/topics_commands_manage add Болталка /help /tag /add_team /add_member
+/topics_commands_manage add "Болталка" /help /tag /add_team /add_member
 ```
 
 ## ⛏️ Миграции 
