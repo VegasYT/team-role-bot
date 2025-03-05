@@ -10,7 +10,7 @@ from aiogram.types import Message, FSInputFile
 from sqlalchemy.orm import Session
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Rectangle
+from html import escape
 
 # Локальные модули
 from models import CommandHistory, Member, Command, RoleCommands, Role, Topic
@@ -66,7 +66,7 @@ def get_or_create_member(username: str, telegram_id: int, db: Session) -> Member
             db.commit()
 
         # Создаем нового пользователя с ролью по умолчанию и Telegram ID
-        member = Member(username=username, telegram_id=telegram_id, role_id=default_role.id)
+        member = Member(username=username, telegram_id=telegram_id, role_id=default_role.id, balance=5000)
         db.add(member)
         db.commit()
         print(f"Создан новый пользователь с ролью {default_role.role_name}")
@@ -380,3 +380,57 @@ async def send_chart(message, title, x_labels, y_values, x_label, y_label, capti
     finally:
         if os.path.exists(filename):
             os.remove(filename)
+
+
+def get_score_change(dice_value: int) -> int:
+    """
+    Проверяет выигрышные комбинации.
+
+    :param dice_value: Значение dice (1-64)
+    :return: Изменение счета пользователя (целое число)
+    """
+    # three-of-a-kind (кроме 777)
+    if dice_value in (1, 22, 43):
+        return 7
+    # два 7 в начале (кроме 777)
+    elif dice_value in (16, 32, 48):
+        return 5
+    # джекпот (777)
+    elif dice_value == 64:
+        return 10
+    else:
+        return -1
+    
+
+def generate_notification_message(
+    team_name: str,
+    custom_message: str,
+    time: str,
+    chat_id: int,
+    message_thread_id: int = None,
+) -> tuple[str, str, int, int]:
+    """
+    Генерирует итоговое сообщение с HTML-разметкой и возвращает дополнительные данные.
+
+    :param team_name: Название команды.
+    :param custom_message: Пользовательское сообщение.
+    :param time: Время в формате "день.месяц час:минута".
+    :param chat_id: ID чата, откуда была вызвана команда.
+    :param message_thread_id: ID топика (если есть).
+    :param is_important: Флаг, указывающий, является ли напоминание важным.
+    :return: Кортеж (сообщение, экранированное время, chat_id, message_thread_id).
+    """
+    # Экранируем team_name и time для безопасности
+    team_name_escaped = escape(team_name)
+    time_escaped = escape(time)
+
+    # Формируем текст сообщения
+    formatted_message = (
+        f"<blockquote>Для команды #{team_name_escaped}</blockquote>\n\n"
+        f"{custom_message}"
+    )
+
+    # print(formatted_message)
+    # print(time_escaped)
+
+    return formatted_message, time_escaped, chat_id, message_thread_id

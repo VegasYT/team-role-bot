@@ -2,23 +2,21 @@
 import random
 import time
 import asyncio
-from html import escape
 from datetime import datetime, timedelta
-import os
-import uuid
 
 # Библиотеки сторонних разработчиков
 from aiogram import types
-from aiogram.types import Message
+from aiogram.types import Message, PreCheckoutQuery, LabeledPrice
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-import matplotlib.pyplot as plt
+from html import escape
 
 # Локальные модули
 from database import get_team_members, SessionLocal
 from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands, CommandHistory
 from config import BOT_TOKEN, EMOJI_IDS
-from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message, extract_command_name, send_chart
+from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message, extract_command_name, send_chart, get_score_change, generate_notification_message
+from keyboards.payment_keyboard import payment_keyboard
 
 
 bot = Bot(token=BOT_TOKEN)
@@ -331,7 +329,6 @@ async def tag_command(message: Message):
     # Остаток считаем пользовательским сообщением (HTML/текст)
     custom_message = remainder
 
-    # --- Далее ваша логика, без изменений:
     members = get_team_members(db, team_name)
     if not members:
         await message.reply(f"Команда '{team_name}' не найдена или не имеет участников.")
@@ -350,7 +347,6 @@ async def tag_command(message: Message):
 
     # ВАЖНО: если вы хотите сохранить сложную HTML-разметку из custom_message – не экранируем его.
     # Но team_name, mentions и sender лучше экранировать
-    from html import escape
     team_name_escaped = escape(team_name)
     mentions_escaped = escape(mentions)
     sender_escaped = escape(sender)
@@ -417,6 +413,150 @@ async def tag_command(message: Message):
         )
 
     db.close()
+
+
+async def notify_command(message: types.Message):
+    """
+    Обрабатывает команду /notify.
+    Формат: /notify "Название команды" "Время" "Текст" [--important]
+    """
+    db = SessionLocal()
+
+    # Проверяем пользователя, чат и разрешение команды
+    if not await check_user_and_permissions(db, message, '/notify'):
+        db.close()
+        return
+
+    # Получаем текст команды
+    command_text = message.html_text
+
+    # Убираем саму команду /notify из текста
+    command_text = command_text.replace("/notify", "").strip()
+
+    # Парсим аргументы в кавычках
+    try:
+        # Разделяем текст по кавычкам
+        parts = [part.strip() for part in command_text.split('"') if part.strip()]
+
+        # Проверяем, что у нас есть три аргумента: team_name, time, custom_message
+        if len(parts) < 3:
+            await message.reply('Использование: /notify "Название команды" "Время" "Текст" [--important]')
+            db.close()
+            return
+
+        # Извлекаем аргументы
+        team_name = parts[0]
+        time = parts[1]
+        custom_message = parts[2]
+
+        # Проверяем флаг --important (ищем его за пределами кавычек)
+        is_important = "--important" in command_text
+        if is_important:
+            # Убираем флаг из custom_message, если он там случайно оказался
+            custom_message = custom_message.replace("--important", "").strip()
+
+        # Получаем участников команды из базы данных
+        members = get_team_members(db, team_name)
+        if not members:
+            await message.reply(f"Команда '{team_name}' не найдена или не имеет участников.")
+            db.close()
+            return
+
+        # Получаем chat_id и message_thread_id (если есть)
+        chat_id = message.chat.id
+        message_thread_id = message.message_thread_id if message.is_topic_message else None
+
+        # Генерируем сообщение и дополнительные данные
+        notification_message, time_escaped, chat_id, message_thread_id = generate_notification_message(
+            team_name=team_name,
+            custom_message=custom_message,
+            time=time,
+            chat_id=chat_id,
+            message_thread_id=message_thread_id,
+        )
+
+        # Отправляем сообщение в чат
+        await message.reply("Отложенная задача создана")
+
+    except Exception as e:
+        await message.reply(f"Ошибка при обработке команды: {e}")
+    finally:
+        db.close()
+
+
+async def remove_member_command(message: Message):
+    """
+    Обрабатывает команду для удаления пользователей из команды (/remove_member). Проверяет существование команды и наличие пользователей в ней, затем удаляет пользователей.
+
+    :param message: Сообщение от пользователя, содержащее команду, название команды и список пользователей для удаления.
+    :return: Ответ в чат с результатами удаления пользователей из команды.
+    """
+
+    db = SessionLocal()
+
+    # Проверяем пользователя, чат и разрешение команды
+    if not await check_user_and_permissions(db, message, '/remove_member'):
+        db.close()
+        return
+
+    # Нормализация текста команды
+    raw_text = message.text or message.caption or ""
+
+    # Парсинг аргументов
+    operation, team_name, remainder = parse_quoted_argument(raw_text, "remove_member")
+
+    if not team_name:
+        await message.reply('Использование: /remove_member "<Название команды>" user1 user2 ...')
+        db.close()
+        return
+
+    usernames = remainder.split()
+
+    team = db.query(Team).filter(Team.team_name == team_name).first()
+
+    if not team:
+        await message.reply(f"Команда '{team_name}' не найдена.")
+        return
+
+    removed_users = []
+    not_found_users = []
+
+    for username in usernames:
+        # Убираем символ @, если он есть
+        username_without_at = username.lstrip('@')
+
+        # Проверяем, есть ли пользователь в команде
+        user_in_team = (db.query(Member).join(Member.teams).filter(Team.id == team.id,Member.username == username_without_at).first())
+
+        print(user_in_team)
+
+        if user_in_team:
+            # Устанавливаем NULL в поле team_id, удаляя пользователя из команды
+            user_in_team.team_id = None
+            removed_users.append(f"@{username_without_at}")  # Приписываем @
+        else:
+            not_found_users.append(f"@{username_without_at}")  # Приписываем @
+
+    db.commit()
+
+    # Формируем сообщение для пользователя
+    response_message = ""
+
+    if removed_users:
+        response_message += f"🗑️ Пользователи {', '.join(removed_users)} удалены из команды '{team_name}'.\n\n"
+
+    if not_found_users:
+        response_message += f"🔎 Пользователи {', '.join(not_found_users)} не найдены в команде '{team_name}'."
+
+    if not removed_users and not not_found_users:
+        response_message = f"Не удалось удалить пользователей из команды '{team_name}'."  # Пишем, если не было изменений
+
+    db.close()
+
+    await message.answer(response_message)
+
+
+
 
 
 async def ban_member_command(message: Message):
@@ -1578,3 +1718,174 @@ async def top_users_command(message: types.Message):
 
     # Удаляем сообщение пользователя после успешной обработки
     await delete_user_message(message)
+
+
+async def send_invoice_handler(message: Message):
+    """
+    Обрабатывает команду /donate и отправляет инвойс на указанное количество звезд.
+    """
+    # Разбираем аргументы команды
+    args = message.text.split()
+    if len(args) < 2:
+        await message.reply("Использование: /donate <количество звезд>")
+        return
+
+    try:
+        stars_amount = int(args[1])  # Количество звезд
+        if stars_amount <= 0:
+            await message.reply("Количество звезд должно быть больше 0.")
+            return
+    except ValueError:
+        await message.reply("Количество звезд должно быть числом.")
+        return
+
+    # Создаем инвойс на указанное количество звезд
+    prices = [LabeledPrice(label="XTR", amount=stars_amount)] 
+    await message.answer_invoice(
+        title=f"Донат на {stars_amount} звезд",
+        description=f"За {stars_amount}⭐️ вы получите {stars_amount*200} кредитов ",
+        prices=prices,
+        provider_token="", 
+        payload="bot_support",
+        currency="XTR",
+        reply_markup=payment_keyboard(),
+    )
+
+
+async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):  
+    await pre_checkout_query.answer(ok=True)
+
+
+async def success_payment_handler(message: Message):  
+    db = SessionLocal()
+
+    # Получаем пользователя из базы данных
+    member = db.query(Member).filter(Member.username == message.from_user.username).first()
+    if not member:
+        await message.answer("Пользователь не найден в базе данных.")
+        db.close()
+        return
+
+    # Получаем количество звезд из успешного платежа
+    stars_amount = message.successful_payment.total_amount
+
+    # Увеличиваем баланс пользователя (100 кредитов за 1 звезду)
+    member.balance += stars_amount * 200
+    db.commit()
+
+    # Отправляем сообщение с благодарностью и новым балансом
+    await message.answer(f"🥳 Ваш баланс пополнен на {stars_amount * 200} кредитов.\n"
+                         f"Текущий баланс: {member.balance} кредитов.")
+
+    db.close()
+
+
+# Глобальный словарь для отслеживания состояния пользователей
+active_casino_users = {}
+
+async def casino_command(message: Message):
+    """
+    Обрабатывает команду /casino, отправляет анимацию слот-машины и проверяет результат.
+    """
+    db = SessionLocal()
+
+    try:
+        # Проверяем пользователя и разрешения
+        if not await check_user_and_permissions(db, message, '/casino'):
+            return
+
+        # Получаем пользователя из базы данных
+        member = db.query(Member).filter(Member.username == message.from_user.username).first()
+        if not member:
+            await message.reply("Пользователь не найден в базе данных.")
+            return
+
+        # Проверяем, не активен ли уже пользователь в казино
+        if active_casino_users.get(message.from_user.id, False):
+            await message.reply("Подождите, пока завершится текущая прокрутка.")
+            return
+
+        # Устанавливаем флаг активности пользователя
+        active_casino_users[message.from_user.id] = True
+
+        # Парсим аргументы команды из message.text
+        command_parts = message.text.split()
+        bet = 50  # Ставка по умолчанию
+
+        if len(command_parts) > 1:  # Если есть аргументы после команды
+            try:
+                bet = int(command_parts[1])  # Второй элемент — это ставка
+                if bet < 50:
+                    await message.reply("Минимальная ставка: 50 очков.")
+                    return
+            except ValueError:
+                await message.reply("Ставка должна быть числом.")
+                return
+
+        # Проверяем баланс пользователя
+        if member.balance < bet:
+            await message.reply(f"💸Недостаточно средств для игры. Ваш баланс: {member.balance} очков.\n\n⭐️Пополнить баланс можете через /donate")
+            return
+
+        # Списываем ставку с баланса пользователя
+        member.balance -= bet
+        db.commit()
+
+        # Отправляем анимацию слот-машины
+        dice_message = await message.reply_dice(emoji="🎰")
+
+        # Ждем завершения анимации
+        await asyncio.sleep(1.9)
+
+        # Получаем результат броска
+        dice_value = dice_message.dice.value
+
+        # Проверяем результат с помощью функции get_score_change
+        score_change = get_score_change(dice_value)
+
+        # Обновляем баланс пользователя в зависимости от результата
+        if score_change > 0:
+            winnings = score_change * bet * 1.6  # Выигрыш = ставка * коэффициент
+            member.balance += winnings
+            result_text = f"🎉 Поздравляем! Вы выиграли {winnings} очков! 🎉\nВаш текущий баланс: {member.balance}"
+        else:
+            result_text = f"😢 К сожалению, вы проиграли. Ваш текущий баланс: {member.balance}"
+
+        # Сохраняем изменения в базе данных
+        db.commit()
+
+        # Отправляем результат пользователю
+        await message.reply(result_text)
+
+    except Exception as e:
+        # Логируем ошибку
+        print(f"Ошибка при обработке команды /casino: {e}")
+        await message.reply("Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
+    finally:
+        # Снимаем флаг активности пользователя
+        active_casino_users[message.from_user.id] = False
+        db.close()
+
+
+async def balance_command(message: Message):
+    """
+    Обрабатывает команду /balance, показывая текущий баланс пользователя.
+    """
+    db = SessionLocal()
+
+    try:
+        # Получаем пользователя из базы данных
+        member = db.query(Member).filter(Member.username == message.from_user.username).first()
+        if not member:
+            await message.reply("Пользователь не найден в базе данных.")
+            return
+
+        # Отправляем текущий баланс пользователя
+        await message.reply(f"💰 Ваш текущий баланс: {member.balance} очков.")
+
+    except Exception as e:
+        # Логируем ошибку
+        print(f"Ошибка при обработке команды /balance: {e}")
+        await message.reply("Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
+    finally:
+        db.close()

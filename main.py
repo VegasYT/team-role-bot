@@ -2,7 +2,7 @@
 import asyncio
 
 # Библиотеки сторонних разработчиков
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import BotCommand
 from typing import Tuple
@@ -15,7 +15,7 @@ from handlers import (
     edit_handler_command, help_admin_command, role_manage_command, list_roles_command,
     role_commands_manage_command, list_topics_command, topics_manage_command,
     topics_commands_manage_command, random_number_command, random_choice_command, top_commands_command,
-    top_users_handler_command, top_users_command
+    top_users_handler_command, top_users_command, notify_command, send_invoice_handler, pre_checkout_handler, success_payment_handler, casino_command, balance_command
 )
 
 
@@ -62,6 +62,10 @@ async def set_bot_commands(bot: Bot) -> None:
         BotCommand(command="top_commands", description="Популярные хендлеры"),
         BotCommand(command="top_users_handler", description="Топ пользователей использующих хендлер"),
         BotCommand(command="top_users", description="Топ пользователей вызывающих бота"),
+        BotCommand(command="notify", description="Отложенный /tag"), # Пока не работает
+        BotCommand(command="donate", description="Купить кредиты"),
+        BotCommand(command="casino", description="Казино"),
+        BotCommand(command="balance", description="Баланс"),
     ]
     await bot.set_my_commands(commands)
 
@@ -96,6 +100,16 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.message(Command("top_commands"))(top_commands_command)
     dp.message(Command("top_users_handler"))(top_users_handler_command)
     dp.message(Command("top_users"))(top_users_command)
+    dp.message(Command("notify"))(notify_command)
+
+    # Платежные обработчики
+    dp.message.register(send_invoice_handler, Command("donate"))
+    dp.pre_checkout_query.register(pre_checkout_handler)
+    dp.message.register(success_payment_handler, F.successful_payment)
+
+    # Казик
+    dp.message.register(casino_command, Command("casino"))
+    dp.message.register(balance_command, Command("balance"))
 
 
 async def main() -> None:

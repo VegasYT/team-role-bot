@@ -36,6 +36,7 @@ class Member(Base):
     username = Column(String, nullable=False)
     telegram_id = Column(Integer, nullable=True)
     role_id = Column(Integer, ForeignKey("roles.id"))
+    balance = Column(Integer, default=5000)
     
     role = relationship("Role", back_populates="members")
 
