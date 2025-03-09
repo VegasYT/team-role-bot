@@ -129,7 +129,7 @@ alembic upgrade head
 ![Example3](https://i.imgur.com/E468E50.png)
 
 ### 🗄️ Архитектура БД
-![DB](https://i.imgur.com/A2rwKan.png)
+![DB](https://i.imgur.com/ASld0Un.png)
 
 ### 🛠️ Используемые технологии
 #### Aiogram, Asyncio, Alembic, SQLAlchemy
