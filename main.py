@@ -1,11 +1,13 @@
 # Стандартные библиотеки
 import asyncio
+from datetime import datetime, timedelta
 
 # Библиотеки сторонних разработчиков
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import BotCommand
 from typing import Tuple
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Локальные модули
 from config import BOT_TOKEN
@@ -17,6 +19,7 @@ from handlers import (
     topics_commands_manage_command, random_number_command, random_choice_command, top_commands_command,
     top_users_handler_command, top_users_command, notify_command, send_invoice_handler, pre_checkout_handler, success_payment_handler, casino_command, balance_command
 )
+from tasks import update_balances
 
 
 async def create_bot() -> Tuple[Bot, Dispatcher]:
@@ -129,6 +132,11 @@ async def main() -> None:
 
     # Регистрация обработчиков команд
     register_handlers(dp)
+
+    # Раз в неделю обновляет баланс(каждое воскресенье в 00:01)
+    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    scheduler.add_job(update_balances, 'cron', day_of_week='sun', hour=0, minute=1)
+    scheduler.start()
 
     # Запуск бота
     print("Бот запущен...")
