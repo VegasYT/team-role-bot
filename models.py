@@ -104,3 +104,12 @@ class TopicCommands(Base):
 
     topic_id = Column(Integer, ForeignKey('topics.id', ondelete='CASCADE'), primary_key=True)  # ID топика
     command_id = Column(Integer, ForeignKey('commands.id', ondelete='CASCADE'), primary_key=True)  # ID команды
+
+
+class CasinoWin(Base):
+    __tablename__ = 'casino_wins'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    member_id = Column(Integer, ForeignKey('members.id', ondelete='CASCADE'), nullable=False)
+    amount = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, default=func.now())
