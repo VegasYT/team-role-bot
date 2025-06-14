@@ -15,7 +15,7 @@ from handlers import (
     add_team_command, add_member_command, remove_team_command, remove_member_command,
     tag_command, help_command, ban_member_command, assign_role_command, teams_command,
     edit_handler_command, help_admin_command, role_manage_command, list_roles_command,
-    role_commands_manage_command, list_topics_command, topics_manage_command,
+    role_commands_manage_command, list_topics_command, top_casino_winners_alltime_command, top_casino_winners_command, topics_manage_command,
     topics_commands_manage_command, random_number_command, random_choice_command, top_commands_command,
     top_users_handler_command, top_users_command, notify_command, send_invoice_handler, pre_checkout_handler, success_payment_handler, casino_command, balance_command
 )
@@ -69,6 +69,9 @@ async def set_bot_commands(bot: Bot) -> None:
         BotCommand(command="donate", description="Купить кредиты"),
         BotCommand(command="casino", description="Казино"),
         BotCommand(command="balance", description="Баланс"),
+        BotCommand(command="top_casino_winners", description="Топ 5 по выигрышу с воскресенья"),
+        BotCommand(command="top_casino_winners_alltime", description="Топ 5 по выигрышу за все время"),
+
     ]
     await bot.set_my_commands(commands)
 
@@ -113,6 +116,8 @@ def register_handlers(dp: Dispatcher) -> None:
     # Казик
     dp.message.register(casino_command, Command("casino"))
     dp.message.register(balance_command, Command("balance"))
+    dp.message.register(top_casino_winners_command, Command("top_casino_winners"))
+    dp.message.register(top_casino_winners_alltime_command, Command("top_casino_winners_alltime"))
 
 
 async def main() -> None:

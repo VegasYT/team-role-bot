@@ -1,4 +1,5 @@
 # Стандартные библиотеки
+from datetime import datetime, timedelta
 import re
 import random
 import os
@@ -7,13 +8,14 @@ import uuid
 
 # Библиотеки сторонних разработчиков
 from aiogram.types import Message, FSInputFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from html import escape
 
 # Локальные модули
-from models import CommandHistory, Member, Command, RoleCommands, Role, Topic
+from models import CommandHistory, Member, Command, RoleCommands, Role, Topic, CasinoWin
 from config import ALLOWED_CHAT_IDS, STYLE_URL
 
 
@@ -434,3 +436,47 @@ def generate_notification_message(
     # print(time_escaped)
 
     return formatted_message, time_escaped, chat_id, message_thread_id
+
+
+def get_top5_casino_winners_this_week(db):
+    """
+    Получает топ-5 пользователей по суммарному выигрышу в казино с последнего воскресенья.
+    :param db: Сессия базы данных
+    :return: Список кортежей (username, сумма выигрыша)
+    """
+    now = datetime.now()
+    # Получить последнее воскресенье 00:00 (или ближайшее прошедшее)
+    weekday = now.weekday()  # 0 — понедельник, 6 — воскресенье
+    days_since_sunday = (now.weekday() + 1) % 7
+    last_sunday = datetime(now.year, now.month, now.day) - timedelta(days=days_since_sunday)
+    last_sunday = last_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Группируем суммы выигрышей по member_id
+    results = (
+        db.query(Member.username, func.sum(CasinoWin.amount).label('total_wins'))
+        .join(Member, Member.id == CasinoWin.member_id)
+        .filter(CasinoWin.timestamp >= last_sunday)
+        .group_by(Member.username)
+        .order_by(func.sum(CasinoWin.amount).desc())
+        .limit(5)
+        .all()
+    )
+    # results = [(username1, win1), ...]
+    return results
+
+
+def get_top5_casino_winners_all_time(db):
+    """
+    Получает топ-5 пользователей по суммарному выигрышу в казино за всё время.
+    :param db: Сессия базы данных
+    :return: Список кортежей (username, сумма выигрыша)
+    """
+    results = (
+        db.query(Member.username, func.sum(CasinoWin.amount).label('total_wins'))
+        .join(Member, Member.id == CasinoWin.member_id)
+        .group_by(Member.username)
+        .order_by(func.sum(CasinoWin.amount).desc())
+        .limit(5)
+        .all()
+    )
+    return results

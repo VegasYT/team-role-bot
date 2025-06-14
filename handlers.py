@@ -10,12 +10,13 @@ from aiogram.types import Message, PreCheckoutQuery, LabeledPrice
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from html import escape
+from sqlalchemy.sql import func
 
 # Локальные модули
 from database import get_team_members, SessionLocal
-from models import Team, Member, Role, Command, RoleCommands, Topic, TopicCommands, CommandHistory
+from models import CasinoWin, Team, Member, Role, Command, RoleCommands, Topic, TopicCommands, CommandHistory
 from config import BOT_TOKEN, EMOJI_IDS
-from utils import check_user_and_permissions, parse_quoted_argument, choice, delete_user_message, extract_command_name, send_chart, get_score_change, generate_notification_message
+from utils import check_user_and_permissions, get_top5_casino_winners_all_time, get_top5_casino_winners_this_week, parse_quoted_argument, choice, delete_user_message, extract_command_name, send_chart, get_score_change, generate_notification_message
 from keyboards.payment_keyboard import payment_keyboard
 
 
@@ -1843,15 +1844,20 @@ async def casino_command(message: Message):
         # Проверяем результат с помощью функции get_score_change
         score_change = get_score_change(dice_value)
 
+        winnings = 0
+
         # Обновляем баланс пользователя в зависимости от результата
         if score_change > 0:
-            winnings = score_change * bet * 1.6  # Выигрыш = ставка * коэффициент
+            winnings = int(score_change * bet * 1.6)  # приведение к int (важно для суммы)
             member.balance += winnings
             result_text = f"🎉 Поздравляем! Вы выиграли {winnings} очков! 🎉\nВаш текущий баланс: {member.balance}"
+            
+            # Добавляем запись о выигрыше только если winnings > 0
+            win = CasinoWin(member_id=member.id, amount=winnings)
+            db.add(win)
         else:
-            result_text = f"😢 К сожалению, вы проиграли. Ваш текущий баланс: {member.balance}"
+            result_text = f"😢 К сожалению, вы проиграли. Ваш текущий баланс: {(member.balance)}"
 
-        # Сохраняем изменения в базе данных
         db.commit()
 
         # Отправляем результат пользователю
@@ -1874,6 +1880,10 @@ async def balance_command(message: Message):
     db = SessionLocal()
 
     try:
+        # Проверяем пользователя и разрешения
+        if not await check_user_and_permissions(db, message, '/balance'):
+            return
+        
         # Получаем пользователя из базы данных
         member = db.query(Member).filter(Member.username == message.from_user.username).first()
         if not member:
@@ -1889,3 +1899,66 @@ async def balance_command(message: Message):
         await message.reply("Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
     finally:
         db.close()
+
+
+async def top_casino_winners_command(message):
+    """
+    Обрабатывает команду для вывода графика топ-5 пользователей с наибольшим выигрышем в казино с последнего воскресенья.
+    """
+     
+    db = SessionLocal()
+    winners = get_top5_casino_winners_this_week(db)
+    db.close()
+
+    if not winners:
+        await message.answer("С воскресенья ещё никто ничего не выиграл в казино.")
+        return
+
+    usernames = [f"@{username}" for username, _ in winners]
+    wins = [int(amount) for _, amount in winners]
+
+    title = "Топ 5 по выигрышу с воскресенья"
+    x_label = "Пользователь"
+    y_label = "Суммарный выигрыш"
+    caption = "Топ 5 пользователей по суммарному выигрышу с последнего воскресенья"
+
+    await send_chart(
+        message=message,
+        title=title,
+        x_labels=usernames,
+        y_values=wins,
+        x_label=x_label,
+        y_label=y_label,
+        caption=caption
+    )
+
+
+async def top_casino_winners_alltime_command(message):
+    """
+    Обрабатывает команду для вывода графика топ-5 пользователей с наибольшим выигрышем в казино за всё время.
+    """
+    db = SessionLocal()
+    winners = get_top5_casino_winners_all_time(db)
+    db.close()
+
+    if not winners:
+        await message.answer("Ещё никто не выигрывал в казино.")
+        return
+
+    usernames = [f"@{username}" for username, _ in winners]
+    wins = [int(amount) for _, amount in winners]
+
+    title = "Топ 5 по выигрышу за все время"
+    x_label = "Пользователь"
+    y_label = "Суммарный выигрыш"
+    caption = "Топ 5 пользователей по суммарному выигрышу за всё время"
+
+    await send_chart(
+        message=message,
+        title=title,
+        x_labels=usernames,
+        y_values=wins,
+        x_label=x_label,
+        y_label=y_label,
+        caption=caption
+    )
