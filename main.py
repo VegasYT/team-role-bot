@@ -1,11 +1,11 @@
 # Стандартные библиотеки
 import asyncio
-from datetime import datetime, timedelta
 
 # Библиотеки сторонних разработчиков
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import BotCommand
+from aiogram import types
+from aiogram.types import BotCommand, Message
 from typing import Tuple
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -76,6 +76,15 @@ async def set_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands(commands)
 
 
+def is_casino_emoji(message):
+    return message.text and message.text.strip() == "🎰"
+
+
+async def casino_emoji_handler(message: Message):
+    # message.dice.emoji — это сам эмодзи, напр. "🎰"
+    if message.dice and message.dice.emoji == "🎰":
+        await casino_command(message)
+
 def register_handlers(dp: Dispatcher) -> None:
     """
     Регистрирует обработчики команд в диспетчере.
@@ -115,6 +124,9 @@ def register_handlers(dp: Dispatcher) -> None:
 
     # Казик
     dp.message.register(casino_command, Command("casino"))
+    dp.message(is_casino_emoji)(casino_command)
+    dp.message(lambda m: hasattr(m, "dice") and m.dice and m.dice.emoji == "🎰")(casino_emoji_handler)
+
     dp.message.register(balance_command, Command("balance"))
     dp.message.register(top_casino_winners_command, Command("top_casino_winners"))
     dp.message.register(top_casino_winners_alltime_command, Command("top_casino_winners_alltime"))

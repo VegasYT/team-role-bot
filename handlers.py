@@ -1786,91 +1786,87 @@ active_casino_users = {}
 
 async def casino_command(message: Message):
     """
-    Обрабатывает команду /casino, отправляет анимацию слот-машины и проверяет результат.
+    Обрабатывает команду /casino и броски слота-эмодзи (🎰).
     """
     db = SessionLocal()
-
     try:
-        # Проверяем пользователя и разрешения
         if not await check_user_and_permissions(db, message, '/casino'):
             return
 
-        # Получаем пользователя из базы данных
         member = db.query(Member).filter(Member.username == message.from_user.username).first()
         if not member:
             await message.reply("Пользователь не найден в базе данных.")
             return
 
-        # Проверяем, не активен ли уже пользователь в казино
         if active_casino_users.get(message.from_user.id, False):
             await message.reply("Подождите, пока завершится текущая прокрутка.")
             return
 
-        # Устанавливаем флаг активности пользователя
         active_casino_users[message.from_user.id] = True
 
-        # Парсим аргументы команды из message.text
-        command_parts = message.text.split()
-        bet = 50  # Ставка по умолчанию
-
-        if len(command_parts) > 1:  # Если есть аргументы после команды
-            try:
-                bet = int(command_parts[1])  # Второй элемент — это ставка
-                if bet < 50:
-                    await message.reply("Минимальная ставка: 50 очков.")
+        # Определяем ставку
+        if getattr(message, "dice", None) and message.dice.emoji == "🎰":
+            bet = 50
+            dice_value = message.dice.value
+        else:
+            command_parts = (message.text or "").split()
+            bet = 50
+            if len(command_parts) > 1:
+                try:
+                    bet = int(command_parts[1])
+                    if bet < 50:
+                        await message.reply("Минимальная ставка: 50 очков.")
+                        return
+                except ValueError:
+                    await message.reply("Ставка должна быть числом.")
                     return
-            except ValueError:
-                await message.reply("Ставка должна быть числом.")
+
+            if member.balance < bet:
+                await message.reply(
+                    f"💸Недостаточно средств для игры. Ваш баланс: {member.balance} очков.\n\n⭐️Пополнить баланс можете через /donate"
+                )
                 return
 
-        # Проверяем баланс пользователя
-        if member.balance < bet:
-            await message.reply(f"💸Недостаточно средств для игры. Ваш баланс: {member.balance} очков.\n\n⭐️Пополнить баланс можете через /donate")
-            return
+            member.balance -= bet
+            db.commit()
 
-        # Списываем ставку с баланса пользователя
-        member.balance -= bet
-        db.commit()
+            dice_message = await message.reply_dice(emoji="🎰")
+            await asyncio.sleep(1.9)
+            dice_value = dice_message.dice.value
 
-        # Отправляем анимацию слот-машины
-        dice_message = await message.reply_dice(emoji="🎰")
+        # Если сообщение с dice, то списываем ставку только здесь
+        if getattr(message, "dice", None) and message.dice.emoji == "🎰":
+            if member.balance < bet:
+                await message.reply(
+                    f"💸Недостаточно средств для игры. Ваш баланс: {member.balance} очков.\n\n⭐️Пополнить баланс можете через /donate"
+                )
+                return
+            member.balance -= bet
+            db.commit()
 
-        # Ждем завершения анимации
-        await asyncio.sleep(1.9)
-
-        # Получаем результат броска
-        dice_value = dice_message.dice.value
-
-        # Проверяем результат с помощью функции get_score_change
+        # DRY: единая обработка выигрыша/проигрыша
         score_change = get_score_change(dice_value)
-
         winnings = 0
 
-        # Обновляем баланс пользователя в зависимости от результата
         if score_change > 0:
-            winnings = int(score_change * bet * 1.6)  # приведение к int (важно для суммы)
+            winnings = int(score_change * bet * 1.6)
             member.balance += winnings
             result_text = f"🎉 Поздравляем! Вы выиграли {winnings} очков! 🎉\nВаш текущий баланс: {member.balance}"
-            
-            # Добавляем запись о выигрыше только если winnings > 0
             win = CasinoWin(member_id=member.id, amount=winnings)
             db.add(win)
         else:
-            result_text = f"😢 К сожалению, вы проиграли. Ваш текущий баланс: {(member.balance)}"
+            result_text = f"😢 К сожалению, вы проиграли. Ваш текущий баланс: {member.balance}"
 
         db.commit()
-
-        # Отправляем результат пользователю
         await message.reply(result_text)
 
     except Exception as e:
-        # Логируем ошибку
         print(f"Ошибка при обработке команды /casino: {e}")
         await message.reply("Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
     finally:
-        # Снимаем флаг активности пользователя
         active_casino_users[message.from_user.id] = False
         db.close()
+
 
 
 async def balance_command(message: Message):
